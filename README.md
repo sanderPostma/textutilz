@@ -1,17 +1,59 @@
 # textutilz
 
-A new Flutter project.
+> 🚧 **Note:** This project is currently under construction and in its early phases of development. Expect rapid changes and potential instabilities.
 
-## Getting Started
+`textutilz` is a modern desktop text editor built with Flutter and powered by a high-performance Rust backend. It is designed to provide a rich set of text manipulation tools and a responsive editing experience.
 
-This project is a starting point for a Flutter application.
+## Features
 
-A few resources to get you started if this is your first Flutter project:
+- **Tabbed Editing:** Manage multiple open files concurrently in a clean, tabbed interface.
+- **Robust File Operations:** Fast, safe file reading and writing leveraging Rust's `std::fs`.
+- **MIME Tools:** Built-in utilities to quickly transform text, including:
+  - Base64 Encode/Decode
+  - URL Encode/Decode
+  - Quoted-Printable Encode/Decode
+  - SAML Decode
+- **Command Registry:** A unified, searchable command palette allowing quick access to all editor actions and tools.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Architecture
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This project uses [flutter_rust_bridge](https://cjycode.com/flutter_rust_bridge/) to connect a polished Flutter frontend to a memory-safe, concurrent Rust backend.
+
+- **Frontend (`lib/`):** Manages UI components, theming, and state management in Dart.
+- **Backend (`rust/`):** Handles file buffering, encoding, decoding, and command logic.
+
+## Building and Running
+
+### Prerequisites
+- Flutter SDK (with Linux desktop support enabled)
+- Rust toolchain (`rustup`, `cargo`)
+- `flutter_rust_bridge_codegen` (for modifying Rust bindings)
+
+### Quick Start
+
+1. **Resolve dependencies:**
+   ```bash
+   flutter pub get
+   ```
+
+2. **Generate Rust bindings (if making backend changes):**
+   ```bash
+   flutter_rust_bridge_codegen generate
+   ```
+
+3. **Run the application:**
+   ```bash
+   flutter run -d linux
+   ```
+
+### Testing
+
+Run the Flutter widget and unit tests:
+```bash
+flutter test
+```
+
+Test the Rust backend:
+```bash
+cargo test --manifest-path rust/Cargo.toml
+```
