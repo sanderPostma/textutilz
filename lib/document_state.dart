@@ -147,6 +147,10 @@ class TabRuntime {
   DateTime? lastModified;
   bool tailAutoScroll = true;
 
+  /// When non-null, this tab is displaying a specialized tool (e.g., 'jwt.encode')
+  /// instead of the standard Read/Tail/Edit viewer.
+  String? activeTool;
+
   TabRuntime({required this.meta, required this.session});
 
   // Convenience pass-throughs so call sites stay concise.

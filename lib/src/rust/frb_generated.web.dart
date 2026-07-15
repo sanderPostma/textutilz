@@ -7,8 +7,10 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/commands.dart';
+import 'api/edit_ops.dart';
 import 'api/edit_session.dart';
 import 'api/file_manager.dart';
+import 'api/jwt.dart';
 import 'api/mime_tools.dart';
 import 'api/paths.dart';
 import 'api/store.dart';
@@ -141,6 +143,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  JwtDecodeResult dco_decode_jwt_decode_result(dynamic raw);
 
   @protected
   LineChunk dco_decode_line_chunk(dynamic raw);
@@ -293,6 +298,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  JwtDecodeResult sse_decode_jwt_decode_result(SseDeserializer deserializer);
 
   @protected
   LineChunk sse_decode_line_chunk(SseDeserializer deserializer);
@@ -471,6 +479,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_jwt_decode_result(
+    JwtDecodeResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_line_chunk(LineChunk self, SseSerializer serializer);

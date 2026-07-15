@@ -4,8 +4,10 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/commands.dart';
+import 'api/edit_ops.dart';
 import 'api/edit_session.dart';
 import 'api/file_manager.dart';
+import 'api/jwt.dart';
 import 'api/mime_tools.dart';
 import 'api/paths.dart';
 import 'api/store.dart';
@@ -69,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1501315825;
+  int get rustContentHash => -2118028231;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -228,6 +230,13 @@ abstract class RustLibApi extends BaseApi {
 
   String crateApiPathsAppDataDir();
 
+  String crateApiEditOpsApplyEditOp({
+    required String input,
+    required String opId,
+    required String extension_,
+    required BigInt tabWidth,
+  });
+
   String crateApiMimeToolsBase64Decode({
     required String input,
     required bool strict,
@@ -241,6 +250,16 @@ abstract class RustLibApi extends BaseApi {
     required bool byLine,
   });
 
+  Future<String> crateApiEditOpsBlockComment({
+    required String input,
+    required String extension_,
+  });
+
+  Future<String> crateApiEditOpsBlockUncomment({
+    required String input,
+    required String extension_,
+  });
+
   List<CommandDescriptor> crateApiCommandsCommandRegistryGetAll({
     required CommandRegistry that,
   });
@@ -252,7 +271,24 @@ abstract class RustLibApi extends BaseApi {
     required String query,
   });
 
+  Future<String> crateApiEditOpsConvertEol({
+    required String input,
+    required String eolType,
+  });
+
+  JwtDecodeResult crateApiJwtDecodeJwt({required String token, String? secret});
+
+  String crateApiJwtEncodeJwt({
+    required String header,
+    required String payload,
+    required String secret,
+  });
+
+  Future<String> crateApiEditOpsEolToSpace({required String input});
+
   CommandRegistry crateApiCommandsGetCommandRegistry();
+
+  Future<String> crateApiEditOpsInvertCase({required String input});
 
   Future<String?> crateApiFileManagerPickFile();
 
@@ -260,13 +296,59 @@ abstract class RustLibApi extends BaseApi {
     required String defaultName,
   });
 
+  Future<String> crateApiEditOpsProperCase({
+    required String input,
+    required bool blend,
+  });
+
   String crateApiMimeToolsQpDecode({required String input});
 
   String crateApiMimeToolsQpEncode({required String input});
 
+  Future<String> crateApiEditOpsRandomCase({required String input});
+
   String crateApiMimeToolsSamlDecode({required String input});
 
   String crateApiPathsScratchDir();
+
+  Future<String> crateApiEditOpsSentenceCase({
+    required String input,
+    required bool blend,
+  });
+
+  Future<String> crateApiEditOpsSingleLineComment({
+    required String input,
+    required String extension_,
+  });
+
+  Future<String> crateApiEditOpsSingleLineUncomment({
+    required String input,
+    required String extension_,
+  });
+
+  Future<String> crateApiEditOpsSpaceToTab({
+    required String input,
+    required BigInt tabWidth,
+    required bool leadingOnly,
+  });
+
+  Future<String> crateApiEditOpsTabToSpace({
+    required String input,
+    required BigInt tabWidth,
+  });
+
+  Future<String> crateApiEditOpsToggleSingleLineComment({
+    required String input,
+    required String extension_,
+  });
+
+  Future<String> crateApiEditOpsTrimBoth({required String input});
+
+  Future<String> crateApiEditOpsTrimBothAndEolToSpace({required String input});
+
+  Future<String> crateApiEditOpsTrimLeading({required String input});
+
+  Future<String> crateApiEditOpsTrimTrailing({required String input});
 
   String crateApiMimeToolsUrlDecode({required String input});
 
@@ -1500,6 +1582,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "app_data_dir", argNames: []);
 
   @override
+  String crateApiEditOpsApplyEditOp({
+    required String input,
+    required String opId,
+    required String extension_,
+    required BigInt tabWidth,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(opId, serializer);
+          sse_encode_String(extension_, serializer);
+          sse_encode_usize(tabWidth, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiEditOpsApplyEditOpConstMeta,
+        argValues: [input, opId, extension_, tabWidth],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsApplyEditOpConstMeta => const TaskConstMeta(
+    debugName: "apply_edit_op",
+    argNames: ["input", "opId", "extension_", "tabWidth"],
+  );
+
+  @override
   String crateApiMimeToolsBase64Decode({
     required String input,
     required bool strict,
@@ -1512,7 +1627,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(input, serializer);
           sse_encode_bool(strict, serializer);
           sse_encode_bool(byLine, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1546,7 +1661,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(padding, serializer);
           sse_encode_bool(unixEol, serializer);
           sse_encode_bool(byLine, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1566,6 +1681,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateApiEditOpsBlockComment({
+    required String input,
+    required String extension_,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(extension_, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 43,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsBlockCommentConstMeta,
+        argValues: [input, extension_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsBlockCommentConstMeta =>
+      const TaskConstMeta(
+        debugName: "block_comment",
+        argNames: ["input", "extension_"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsBlockUncomment({
+    required String input,
+    required String extension_,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(extension_, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 44,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsBlockUncommentConstMeta,
+        argValues: [input, extension_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsBlockUncommentConstMeta =>
+      const TaskConstMeta(
+        debugName: "block_uncomment",
+        argNames: ["input", "extension_"],
+      );
+
+  @override
   List<CommandDescriptor> crateApiCommandsCommandRegistryGetAll({
     required CommandRegistry that,
   }) {
@@ -1574,7 +1759,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_command_registry(that, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_command_descriptor,
@@ -1602,7 +1787,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1631,7 +1816,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_command_registry(that, serializer);
           sse_encode_String(query, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_command_descriptor,
@@ -1651,12 +1836,134 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateApiEditOpsConvertEol({
+    required String input,
+    required String eolType,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(eolType, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 48,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsConvertEolConstMeta,
+        argValues: [input, eolType],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsConvertEolConstMeta => const TaskConstMeta(
+    debugName: "convert_eol",
+    argNames: ["input", "eolType"],
+  );
+
+  @override
+  JwtDecodeResult crateApiJwtDecodeJwt({
+    required String token,
+    String? secret,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(token, serializer);
+          sse_encode_opt_String(secret, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_jwt_decode_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiJwtDecodeJwtConstMeta,
+        argValues: [token, secret],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiJwtDecodeJwtConstMeta => const TaskConstMeta(
+    debugName: "decode_jwt",
+    argNames: ["token", "secret"],
+  );
+
+  @override
+  String crateApiJwtEncodeJwt({
+    required String header,
+    required String payload,
+    required String secret,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(header, serializer);
+          sse_encode_String(payload, serializer);
+          sse_encode_String(secret, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiJwtEncodeJwtConstMeta,
+        argValues: [header, payload, secret],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiJwtEncodeJwtConstMeta => const TaskConstMeta(
+    debugName: "encode_jwt",
+    argNames: ["header", "payload", "secret"],
+  );
+
+  @override
+  Future<String> crateApiEditOpsEolToSpace({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 51,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsEolToSpaceConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsEolToSpaceConstMeta =>
+      const TaskConstMeta(debugName: "eol_to_space", argNames: ["input"]);
+
+  @override
   CommandRegistry crateApiCommandsGetCommandRegistry() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_command_registry,
@@ -1673,6 +1980,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_command_registry", argNames: []);
 
   @override
+  Future<String> crateApiEditOpsInvertCase({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 53,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsInvertCaseConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsInvertCaseConstMeta =>
+      const TaskConstMeta(debugName: "invert_case", argNames: ["input"]);
+
+  @override
   Future<String?> crateApiFileManagerPickFile() {
     return handler.executeNormal(
       NormalTask(
@@ -1681,7 +2016,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 54,
             port: port_,
           );
         },
@@ -1711,7 +2046,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 47,
+            funcId: 55,
             port: port_,
           );
         },
@@ -1733,13 +2068,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateApiEditOpsProperCase({
+    required String input,
+    required bool blend,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_bool(blend, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 56,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsProperCaseConstMeta,
+        argValues: [input, blend],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsProperCaseConstMeta => const TaskConstMeta(
+    debugName: "proper_case",
+    argNames: ["input", "blend"],
+  );
+
+  @override
   String crateApiMimeToolsQpDecode({required String input}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(input, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1762,7 +2131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(input, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1779,13 +2148,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "qp_encode", argNames: ["input"]);
 
   @override
+  Future<String> crateApiEditOpsRandomCase({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 59,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsRandomCaseConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsRandomCaseConstMeta =>
+      const TaskConstMeta(debugName: "random_case", argNames: ["input"]);
+
+  @override
   String crateApiMimeToolsSamlDecode({required String input}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(input, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1807,7 +2204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1824,13 +2221,338 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "scratch_dir", argNames: []);
 
   @override
+  Future<String> crateApiEditOpsSentenceCase({
+    required String input,
+    required bool blend,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_bool(blend, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 62,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsSentenceCaseConstMeta,
+        argValues: [input, blend],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsSentenceCaseConstMeta =>
+      const TaskConstMeta(
+        debugName: "sentence_case",
+        argNames: ["input", "blend"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsSingleLineComment({
+    required String input,
+    required String extension_,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(extension_, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 63,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsSingleLineCommentConstMeta,
+        argValues: [input, extension_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsSingleLineCommentConstMeta =>
+      const TaskConstMeta(
+        debugName: "single_line_comment",
+        argNames: ["input", "extension_"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsSingleLineUncomment({
+    required String input,
+    required String extension_,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(extension_, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 64,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsSingleLineUncommentConstMeta,
+        argValues: [input, extension_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsSingleLineUncommentConstMeta =>
+      const TaskConstMeta(
+        debugName: "single_line_uncomment",
+        argNames: ["input", "extension_"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsSpaceToTab({
+    required String input,
+    required BigInt tabWidth,
+    required bool leadingOnly,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_usize(tabWidth, serializer);
+          sse_encode_bool(leadingOnly, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 65,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsSpaceToTabConstMeta,
+        argValues: [input, tabWidth, leadingOnly],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsSpaceToTabConstMeta => const TaskConstMeta(
+    debugName: "space_to_tab",
+    argNames: ["input", "tabWidth", "leadingOnly"],
+  );
+
+  @override
+  Future<String> crateApiEditOpsTabToSpace({
+    required String input,
+    required BigInt tabWidth,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_usize(tabWidth, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 66,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsTabToSpaceConstMeta,
+        argValues: [input, tabWidth],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsTabToSpaceConstMeta => const TaskConstMeta(
+    debugName: "tab_to_space",
+    argNames: ["input", "tabWidth"],
+  );
+
+  @override
+  Future<String> crateApiEditOpsToggleSingleLineComment({
+    required String input,
+    required String extension_,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          sse_encode_String(extension_, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 67,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsToggleSingleLineCommentConstMeta,
+        argValues: [input, extension_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsToggleSingleLineCommentConstMeta =>
+      const TaskConstMeta(
+        debugName: "toggle_single_line_comment",
+        argNames: ["input", "extension_"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsTrimBoth({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 68,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsTrimBothConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsTrimBothConstMeta =>
+      const TaskConstMeta(debugName: "trim_both", argNames: ["input"]);
+
+  @override
+  Future<String> crateApiEditOpsTrimBothAndEolToSpace({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 69,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsTrimBothAndEolToSpaceConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsTrimBothAndEolToSpaceConstMeta =>
+      const TaskConstMeta(
+        debugName: "trim_both_and_eol_to_space",
+        argNames: ["input"],
+      );
+
+  @override
+  Future<String> crateApiEditOpsTrimLeading({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 70,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsTrimLeadingConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsTrimLeadingConstMeta =>
+      const TaskConstMeta(debugName: "trim_leading", argNames: ["input"]);
+
+  @override
+  Future<String> crateApiEditOpsTrimTrailing({required String input}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(input, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 71,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEditOpsTrimTrailingConstMeta,
+        argValues: [input],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditOpsTrimTrailingConstMeta =>
+      const TaskConstMeta(debugName: "trim_trailing", argNames: ["input"]);
+
+  @override
   String crateApiMimeToolsUrlDecode({required String input}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(input, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1859,7 +2581,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(input, serializer);
           sse_encode_url_encode_variant(variant, serializer);
           sse_encode_bool(byLine, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2118,6 +2840,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  JwtDecodeResult dco_decode_jwt_decode_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return JwtDecodeResult(
+      header: dco_decode_String(arr[0]),
+      payload: dco_decode_String(arr[1]),
+      signature: dco_decode_String(arr[2]),
+      isValid: dco_decode_bool(arr[3]),
+      error: dco_decode_opt_String(arr[4]),
+    );
   }
 
   @protected
@@ -2490,6 +3227,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  JwtDecodeResult sse_decode_jwt_decode_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_header = sse_decode_String(deserializer);
+    var var_payload = sse_decode_String(deserializer);
+    var var_signature = sse_decode_String(deserializer);
+    var var_isValid = sse_decode_bool(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return JwtDecodeResult(
+      header: var_header,
+      payload: var_payload,
+      signature: var_signature,
+      isValid: var_isValid,
+      error: var_error,
+    );
   }
 
   @protected
@@ -2894,6 +3648,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_jwt_decode_result(
+    JwtDecodeResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.header, serializer);
+    sse_encode_String(self.payload, serializer);
+    sse_encode_String(self.signature, serializer);
+    sse_encode_bool(self.isValid, serializer);
+    sse_encode_opt_String(self.error, serializer);
   }
 
   @protected

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:textutilz/src/rust/api/commands.dart';
 import 'document_state.dart';
 import 'mime_tools_panel.dart';
+import 'edit_tools_panel.dart';
 class MenuEntry {
   final String label;
   final IconData icon;
@@ -74,6 +75,10 @@ class MenuRibbon extends StatefulWidget {
   final bool mimeHasSelection;
   final ValueChanged<MimeOp>? onRunMimeOp;
 
+  /// NPP Edit tools properties.
+  final bool editToolsEnabled;
+  final ValueChanged<EditOp>? onRunEditOp;
+
   /// Optional hook fired when the New panel is opened.
   final VoidCallback? onNew;
 
@@ -89,6 +94,9 @@ class MenuRibbon extends StatefulWidget {
 
   /// Notifies the host of the current search query (empty string when cleared).
   final ValueChanged<String>? onSearchChanged;
+
+  /// Invoked when a tool mode should be activated for the current tab.
+  final ValueChanged<String>? onEnterToolMode;
 
   const MenuRibbon({
     super.key,
@@ -107,11 +115,14 @@ class MenuRibbon extends StatefulWidget {
     this.mimeToolsEnabled = false,
     this.mimeHasSelection = false,
     this.onRunMimeOp,
+    this.editToolsEnabled = false,
+    this.onRunEditOp,
     this.onNew,
     this.autoOpenNew = false,
     this.newDocDefaultName = 'new 1',
     this.onCreateDocument,
     this.onSearchChanged,
+    this.onEnterToolMode,
   });
 
   @override
@@ -200,6 +211,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'format_list_numbered': return Icons.format_list_numbered;
       case 'wrap_text': return Icons.wrap_text;
       case 'transform': return Icons.transform;
+      case 'format_size': return Icons.format_size;
+      case 'keyboard_return': return Icons.keyboard_return;
+      case 'space_bar': return Icons.space_bar;
+      case 'comment': return Icons.comment;
       default: return Icons.extension;
     }
   }
@@ -216,6 +231,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'edit.paste': return widget.onPaste;
       case 'view.linenumbers': return widget.onToggleLineNumbers;
       case 'view.wordwrap': return widget.onToggleWordWrap;
+      case 'tools.jwt': return widget.onEnterToolMode != null ? () => widget.onEnterToolMode!('jwt.decode') : null;
       default: return null;
     }
   }
@@ -236,9 +252,24 @@ class _MenuRibbonState extends State<MenuRibbon> {
     );
   }
 
+  Widget _buildEditPanel(EditCategory category, String title, ColorScheme scheme) {
+    return RibbonPanelScaffold(
+      key: ValueKey('panel-edit-${category.name}'),
+      title: title,
+      onBack: _closePanel,
+      scheme: scheme,
+      child: EditToolsPanel(
+        enabled: widget.editToolsEnabled,
+        category: category,
+        onRun: (op) => widget.onRunEditOp?.call(op),
+      ),
+    );
+  }
+
   List<MenuColumn> get _columns {
     MenuEntry entry(String id) {
       final cmd = _registry.commands.firstWhere((c) => c.id == id);
+      final isEditOp = id.startsWith('edit.case') || id.startsWith('edit.eol') || id.startsWith('edit.blank') || id.startsWith('edit.comment');
       return MenuEntry(
         label: cmd.title,
         icon: _parseIcon(cmd.icon),
@@ -246,9 +277,11 @@ class _MenuRibbonState extends State<MenuRibbon> {
         toggled: cmd.id == 'view.linenumbers' ? widget.showLineNumbers :
                  cmd.id == 'view.wordwrap' ? widget.wordWrap : cmd.toggled,
         command: cmd,
-        onPressed: cmd.panelId != null 
-          ? () => _openCommandPanel(cmd)
-          : _getAction(cmd.actionId),
+        onPressed: (isEditOp && !widget.editToolsEnabled)
+          ? null
+          : (cmd.panelId != null 
+              ? () => _openCommandPanel(cmd)
+              : _getAction(cmd.actionId)),
       );
     }
     return [
@@ -271,6 +304,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
             entry('edit.cut'),
             entry('edit.copy'),
             entry('edit.paste'),
+            entry('edit.case'),
+            entry('edit.eol'),
+            entry('edit.blank'),
+            entry('edit.comment'),
           ],
         ),
         MenuColumn(
@@ -295,6 +332,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
           accent: _toolsAccent,
           entries: [
             entry('tools.mime'),
+            entry('tools.jwt'),
           ],
         ),
       ];
@@ -333,7 +371,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
                         ],
                       ),
                       child: _query.isEmpty
-                          ? _buildMenuTable(scheme)
+                          ? SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: _buildMenuTable(scheme),
+                            )
                           : _buildResultsPanel(scheme),
                     ),
                   ],
@@ -376,6 +417,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'mime.url.encode': return _buildMimePanel(MimeCategory.url, false, 'URL Encode', scheme);
       case 'mime.url.decode': return _buildMimePanel(MimeCategory.url, true, 'URL Decode', scheme);
       case 'mime.saml.decode': return _buildMimePanel(MimeCategory.saml, true, 'SAML Decode', scheme);
+      case 'edit.case': return _buildEditPanel(EditCategory.caseConv, 'Convert Case', scheme);
+      case 'edit.eol': return _buildEditPanel(EditCategory.eolConv, 'EOL Conversion', scheme);
+      case 'edit.blank': return _buildEditPanel(EditCategory.blankOps, 'Blank Operations', scheme);
+      case 'edit.comment': return _buildEditPanel(EditCategory.commentOps, 'Comment/Uncomment', scheme);
       default:
         return null;
     }

@@ -12,7 +12,11 @@ import 'package:textutilz/src/rust/frb_generated.dart';
 import 'editor.dart';
 import 'menu_ribbon.dart';
 import 'mime_tools_panel.dart';
+import 'edit_tools_panel.dart';
 import 'document_state.dart';
+import 'jwt_tools_panel.dart';
+import 'package:textutilz/src/rust/api/edit_ops.dart' as rust_edit_ops;
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -120,6 +124,10 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       try {
         _showLineNumbers = _store!.getSetting(key: 'show_line_numbers') == 'true';
         _wordWrap = _store!.getSetting(key: 'word_wrap') == 'true';
+        final counterSetting = _store!.getSetting(key: 'new_doc_counter');
+        if (counterSetting != null) {
+          _newDocCounter = int.tryParse(counterSetting) ?? 1;
+        }
         _restoreSession(_store!);
       } catch (e) {
         debugPrint('session restore failed: $e');
@@ -221,6 +229,31 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     setState(() => _isRibbonVisible = false);
     _persistSession();
   }
+
+  void _runEditOp(EditOp op) {
+    final editor = _activeEditor;
+    if (editor == null) return;
+    try {
+      final ext = _activeTab?.meta.extension ?? '';
+      editor.transformSelectionOrAll((input) {
+        return rust_edit_ops.applyEditOp(
+          input: input,
+          opId: op.opId,
+          extension_: ext,
+          tabWidth: BigInt.from(4),
+        );
+      });
+    } catch (e) {
+      setState(() => _isRibbonVisible = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${op.label} failed: $e')),
+      );
+      return;
+    }
+    setState(() => _isRibbonVisible = false);
+    _persistSession();
+  }
+
 
   @override
   void dispose() {
@@ -389,6 +422,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
         _activeTabIndex = _tabs.length - 1;
         _isRibbonVisible = false;
         _newDocCounter++;
+        _store?.setSetting(key: 'new_doc_counter', value: _newDocCounter.toString());
       });
       _focusNode.requestFocus();
       _persistSession();
@@ -566,6 +600,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   // KeyEventResult.ignored for these Ctrl combos so the ancestor Focus sees them.
   KeyEventResult _handleGlobalShortcut(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyX) {
+      setState(() {
+        _isRibbonVisible = !_isRibbonVisible;
+      });
+      return KeyEventResult.handled;
+    }
     if (!HardwareKeyboard.instance.isControlPressed) return KeyEventResult.ignored;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.keyO:
@@ -608,6 +648,16 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     if (tab.meta.autoDelete != AutoDelete.off) return;
     await _saveTab(tab);
     if (mounted) setState(() => _isRibbonVisible = false);
+  }
+
+  String _getNextUniqueNewDocName() {
+    String name = 'new $_newDocCounter';
+    while (_tabs.any((t) => t.name == name)) {
+      _newDocCounter++;
+      _store?.setSetting(key: 'new_doc_counter', value: _newDocCounter.toString());
+      name = 'new $_newDocCounter';
+    }
+    return name;
   }
 
   @override
@@ -659,29 +709,76 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                     tooltip: 'Menu',
                   ),
                   const SizedBox(width: 8),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: ViewMode.read, label: Text('Read')),
-                      ButtonSegment(value: ViewMode.tail, label: Text('Tail')),
-                      ButtonSegment(value: ViewMode.edit, label: Text('Edit')),
-                    ],
-                    selected: {_activeTab?.mode ?? ViewMode.read},
-                    onSelectionChanged: (Set<String> newSelection) {
-                      if (_activeTab != null) {
+                  if (_activeTab?.activeTool?.startsWith('jwt') == true)
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'exit', label: Text('<- Exit Tool')),
+                        ButtonSegment(value: 'jwt.decode', label: Text('Decoder')),
+                        ButtonSegment(value: 'jwt.encode', label: Text('Encoder')),
+                      ],
+                      selected: {_activeTab!.activeTool!},
+                      onSelectionChanged: (Set<String> newSelection) {
+                        final val = newSelection.first;
                         setState(() {
-                          _activeTab!.mode = newSelection.first;
-                          if (_activeTab!.mode == ViewMode.tail) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                               if (_activeTab!.scrollController.hasClients) {
-                                 _activeTab!.scrollController.jumpTo(_activeTab!.scrollController.position.maxScrollExtent);
-                               }
-                            });
+                          if (val == 'exit') {
+                            _activeTab!.activeTool = null;
+                          } else {
+                            _activeTab!.activeTool = val;
                           }
                         });
                         _persistSession();
-                      }
-                    },
-                  ),
+                      },
+                      style: ButtonStyle(
+                        foregroundColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return Theme.of(context).colorScheme.onSecondaryContainer;
+                          }
+                          return Colors.white; // Unselected text color
+                        }),
+                      ),
+                    )
+                  else if (_activeTab?.activeTool != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.arrow_back, size: 16, color: Colors.white),
+                          label: const Text('Exit Tool', style: TextStyle(color: Colors.white)),
+                          onPressed: () {
+                            setState(() {
+                              _activeTab!.activeTool = null;
+                            });
+                            _persistSession();
+                          },
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Tool', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    )
+                  else
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: ViewMode.read, label: Text('Read')),
+                        ButtonSegment(value: ViewMode.tail, label: Text('Tail')),
+                        ButtonSegment(value: ViewMode.edit, label: Text('Edit')),
+                      ],
+                      selected: {_activeTab?.mode ?? ViewMode.read},
+                      onSelectionChanged: (Set<String> newSelection) {
+                        if (_activeTab != null) {
+                          setState(() {
+                            _activeTab!.mode = newSelection.first;
+                            if (_activeTab!.mode == ViewMode.tail) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                 if (_activeTab!.scrollController.hasClients) {
+                                   _activeTab!.scrollController.jumpTo(_activeTab!.scrollController.position.maxScrollExtent);
+                                 }
+                              });
+                            }
+                          });
+                          _persistSession();
+                        }
+                      },
+                    ),
                   if (_activeTab?.mode == ViewMode.tail) ...[
                     const SizedBox(width: 8),
                     IconButton(
@@ -803,7 +900,15 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           },
                         ),
                       ),
-                    if (_activeTab != null && _activeTab!.mode == ViewMode.edit)
+                    if (_activeTab != null && _activeTab!.activeTool?.startsWith('jwt') == true)
+                      Expanded(
+                        child: JwtToolView(
+                          key: ValueKey('jwt-${_activeTab!.meta.id}'),
+                          initialEncoded: _activeTab!.session.contentString(),
+                          mode: _activeTab!.activeTool == 'jwt.encode' ? JwtMode.encode : JwtMode.decode,
+                        ),
+                      )
+                    else if (_activeTab != null && _activeTab!.mode == ViewMode.edit)
                       Expanded(
                         child: CustomEditor(
                           key: _activeTab!.editorKey,
@@ -921,7 +1026,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                       onOpen: _openFile,
                       onNew: () => _pendingNewPanel = false,
                       autoOpenNew: _pendingNewPanel,
-                      newDocDefaultName: 'new $_newDocCounter',
+                      newDocDefaultName: _getNextUniqueNewDocName(),
                       onCreateDocument: _createNewDocument,
                       onSave: (_activeTab != null &&
                               _activeTab!.isDirty &&
@@ -950,6 +1055,17 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                       mimeToolsEnabled: _activeEditor != null,
                       mimeHasSelection: _activeEditor?.hasLinearSelection ?? false,
                       onRunMimeOp: _runMimeOp,
+                      editToolsEnabled: _activeEditor != null,
+                      onRunEditOp: _runEditOp,
+                      onEnterToolMode: (toolId) {
+                        if (_activeTab != null) {
+                          setState(() {
+                            _activeTab!.activeTool = toolId;
+                            _isRibbonVisible = false;
+                          });
+                          _persistSession();
+                        }
+                      },
                       onCloseTab: _activeTab != null ? _closeActiveTab : null,
                     ),
                   ),

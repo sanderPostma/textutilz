@@ -256,6 +256,104 @@ impl CommandRegistry {
             panel_id: Some("mime.saml.decode".to_string()),
             action_id: None,
         });
+
+        // JWT Tools
+        self.commands.push(CommandDescriptor {
+            id: "tools.jwt".to_string(),
+            title: "JWT Tools".to_string(),
+            category: "Tools".to_string(),
+            icon: Some("transform".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tools.jwt".to_string()),
+        });
+
+        // NPP Edit Group Panels
+        self.commands.push(CommandDescriptor {
+            id: "edit.case".to_string(),
+            title: "Convert Case".to_string(),
+            category: "Edit".to_string(),
+            icon: Some("format_size".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: Some("edit.case".to_string()),
+            action_id: None,
+        });
+        self.commands.push(CommandDescriptor {
+            id: "edit.eol".to_string(),
+            title: "EOL Conversion".to_string(),
+            category: "Edit".to_string(),
+            icon: Some("keyboard_return".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: Some("edit.eol".to_string()),
+            action_id: None,
+        });
+        self.commands.push(CommandDescriptor {
+            id: "edit.blank".to_string(),
+            title: "Blank Operations".to_string(),
+            category: "Edit".to_string(),
+            icon: Some("space_bar".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: Some("edit.blank".to_string()),
+            action_id: None,
+        });
+        self.commands.push(CommandDescriptor {
+            id: "edit.comment".to_string(),
+            title: "Comment / Uncomment".to_string(),
+            category: "Edit".to_string(),
+            icon: Some("comment".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: Some("edit.comment".to_string()),
+            action_id: None,
+        });
+
+        // NPP Edit Specific Sub-Commands (for Search)
+        let sub_ops = vec![
+            ("edit.case.uppercase", "UPPERCASE", "Convert Case", "edit.case"),
+            ("edit.case.lowercase", "lowercase", "Convert Case", "edit.case"),
+            ("edit.case.proper", "Proper Case", "Convert Case", "edit.case"),
+            ("edit.case.proper_blend", "Proper Case (blend)", "Convert Case", "edit.case"),
+            ("edit.case.sentence", "Sentence case", "Convert Case", "edit.case"),
+            ("edit.case.sentence_blend", "Sentence case (blend)", "Convert Case", "edit.case"),
+            ("edit.case.invert", "iNVERT cASE", "Convert Case", "edit.case"),
+            ("edit.case.random", "ranDOm CasE", "Convert Case", "edit.case"),
+
+            ("edit.eol.windows", "Windows (CR LF)", "EOL Conversion", "edit.eol"),
+            ("edit.eol.unix", "Unix (LF)", "EOL Conversion", "edit.eol"),
+            ("edit.eol.mac", "Macintosh (CR)", "EOL Conversion", "edit.eol"),
+
+            ("edit.blank.trim_trailing", "Trim Trailing Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.trim_leading", "Trim Leading Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.trim_both", "Trim Leading and Trailing Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.eol_to_space", "EOL to Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.trim_both_and_eol_to_space", "Trim both and EOL to Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.tab_to_space", "TAB to Space", "Blank Operations", "edit.blank"),
+            ("edit.blank.space_to_tab_all", "Space to TAB (All)", "Blank Operations", "edit.blank"),
+            ("edit.blank.space_to_tab_leading", "Space to TAB (Leading)", "Blank Operations", "edit.blank"),
+
+            ("edit.comment.toggle_single_line", "Toggle Single Line Comment", "Comment / Uncomment", "edit.comment"),
+            ("edit.comment.block_comment", "Block Comment", "Comment / Uncomment", "edit.comment"),
+            ("edit.comment.block_uncomment", "Block Uncomment", "Comment / Uncomment", "edit.comment"),
+            ("edit.comment.single_line_comment", "Single Line Comment", "Comment / Uncomment", "edit.comment"),
+            ("edit.comment.single_line_uncomment", "Single Line Uncomment", "Comment / Uncomment", "edit.comment"),
+        ];
+
+        for (id, title, cat, panel) in sub_ops {
+            self.commands.push(CommandDescriptor {
+                id: id.to_string(),
+                title: title.to_string(),
+                category: cat.to_string(),
+                icon: Some("transform".to_string()),
+                shortcut: None,
+                toggled: None,
+                panel_id: Some(panel.to_string()),
+                action_id: None,
+            });
+        }
     }
 
     #[frb(sync)]

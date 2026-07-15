@@ -5,6 +5,14 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:textutilz/src/rust/api/edit_session.dart';
 
+class SelectionRange {
+  final int startRow;
+  final int startCol;
+  final int endRow;
+  final int endCol;
+  const SelectionRange(this.startRow, this.startCol, this.endRow, this.endCol);
+}
+
 class EditorSettings {
   static int tabSize = 4;
 }
@@ -34,12 +42,14 @@ class CustomEditor extends StatefulWidget {
   final void Function(int row, int col, int selChars, int selLines)? onCursorChanged;
   final VoidCallback? onContentChanged;
   final ValueChanged<double>? onFontSizeChanged;
+  final bool readOnly;
 
   const CustomEditor({
     super.key,
     required this.session,
     this.fontSize = 14.0,
     this.showLineNumbers = false,
+    this.readOnly = false,
     this.onCursorChanged,
     this.onContentChanged,
     this.onFontSizeChanged,
@@ -74,6 +84,9 @@ class CustomEditorState extends State<CustomEditor> {
   int? _selStartRow;
   int? _selStartCol;
   bool _isBlockSelection = false;
+  final List<SelectionRange> _multiSelections = [];
+  DateTime? _lastTapTime;
+  int _tapCount = 0;
 
   EditSession get _session => widget.session;
   int get _visualLineCount => _session.lineCount().toInt();
@@ -90,7 +103,8 @@ class CustomEditorState extends State<CustomEditor> {
 
   /// Replace the entire document with [text] as one undoable step. Used by the
   /// MIME tools to write a transform result back into the editor.
-  void replaceAll(String text) {
+  void replaceAll(String text, {bool requestFocus = true, bool ignoreReadOnly = false}) {
+    if (widget.readOnly && !ignoreReadOnly) return;
     setState(() {
       final c = _session.replaceAll(text: text);
       _cursorRow = c.row.toInt();
@@ -99,7 +113,7 @@ class CustomEditorState extends State<CustomEditor> {
       _selStartCol = null;
     });
     widget.onContentChanged?.call();
-    _focusNode.requestFocus();
+    if (requestFocus) _focusNode.requestFocus();
   }
 
   /// True when there is a (linear, non-column) selection MIME tools can scope to.
@@ -111,7 +125,47 @@ class CustomEditorState extends State<CustomEditor> {
   /// [transform] is invoked *before* any mutation, so if it throws (e.g. a
   /// decode over invalid input) the document is left untouched and the
   /// exception propagates to the caller.
-  void transformSelectionOrAll(String Function(String input) transform) {
+  /// Returns true if it made changes.
+  bool transformSelectionOrAll(String Function(String input) transform) {
+    if (widget.readOnly) return false;
+    if (_multiSelections.isNotEmpty) {
+      final outputs = <String>[];
+      for (final range in _multiSelections) {
+        outputs.add(transform(_getRangeText(range.startRow, range.startCol, range.endRow, range.endCol)));
+      }
+      final sortedIndices = List<int>.generate(_multiSelections.length, (i) => i);
+      sortedIndices.sort((a, b) {
+        final rA = _multiSelections[a];
+        final rB = _multiSelections[b];
+        if (rB.startRow != rA.startRow) {
+          return rB.startRow.compareTo(rA.startRow);
+        }
+        return rB.startCol.compareTo(rA.startCol);
+      });
+      setState(() {
+        _session.beginGroup();
+        for (final idx in sortedIndices) {
+          final range = _multiSelections[idx];
+          final output = outputs[idx];
+          int r1 = range.startRow;
+          int c1 = range.startCol;
+          int r2 = range.endRow;
+          int c2 = range.endCol;
+          if (r1 > r2 || (r1 == r2 && c1 > c2)) {
+            final tr = r1; r1 = r2; r2 = tr;
+            final tc = c1; c1 = c2; c2 = tc;
+          }
+          _applyDelete(r1, c1, r2, c2);
+          _applyInsert(r1, c1, output);
+        }
+        _session.endGroup();
+        _clearSelection();
+      });
+      widget.onContentChanged?.call();
+      _scrollToCursor();
+      _focusNode.requestFocus();
+      return true;
+    }
     if (hasLinearSelection) {
       final output = transform(_selectedLinearText());
       setState(() {
@@ -130,9 +184,36 @@ class CustomEditorState extends State<CustomEditor> {
       widget.onContentChanged?.call();
       _scrollToCursor();
       _focusNode.requestFocus();
+      return true;
     } else {
       replaceAll(transform(_session.contentString()));
+      return true;
     }
+  }
+
+  String _getRangeText(int r1, int c1, int r2, int c2) {
+    if (r1 > r2 || (r1 == r2 && c1 > c2)) {
+      int temp = r1; r1 = r2; r2 = temp;
+      temp = c1; c1 = c2; c2 = temp;
+    }
+    StringBuffer sb = StringBuffer();
+    for (int i = r1; i <= r2; i++) {
+      String line = _getLineText(i);
+      if (i == r1 && i == r2) {
+        int start = math.min(c1, line.length);
+        int end = math.min(c2, line.length);
+        sb.write(line.substring(start, end));
+      } else if (i == r1) {
+        int start = math.min(c1, line.length);
+        sb.writeln(line.substring(start));
+      } else if (i == r2) {
+        int end = math.min(c2, line.length);
+        sb.write(line.substring(0, end));
+      } else {
+        sb.writeln(line);
+      }
+    }
+    return sb.toString();
   }
 
   /// The current linear selection as text (newline-joined across rows).
@@ -163,6 +244,7 @@ class CustomEditorState extends State<CustomEditor> {
 
   /// Insert [text] at ([row], [col]); moves the cursor to the returned caret.
   void _applyInsert(int row, int col, String text) {
+    if (widget.readOnly) return;
     final c = _session.insert(row: BigInt.from(row), col: BigInt.from(col), text: text);
     _cursorRow = c.row.toInt();
     _cursorCol = c.col.toInt();
@@ -171,6 +253,7 @@ class CustomEditorState extends State<CustomEditor> {
 
   /// Delete the range [srow,scol]..[erow,ecol]; moves the cursor to the result.
   void _applyDelete(int srow, int scol, int erow, int ecol) {
+    if (widget.readOnly) return;
     final c = _session.delete(
       srow: BigInt.from(srow),
       scol: BigInt.from(scol),
@@ -350,6 +433,7 @@ class CustomEditorState extends State<CustomEditor> {
 
   // Called from within _handleKey's setState.
   void _undo() {
+    if (widget.readOnly) return;
     final c = _session.undo();
     if (c == null) return;
     _clearSelection();
@@ -360,6 +444,7 @@ class CustomEditorState extends State<CustomEditor> {
   }
 
   void _redo() {
+    if (widget.readOnly) return;
     final c = _session.redo();
     if (c == null) return;
     _clearSelection();
@@ -372,6 +457,7 @@ class CustomEditorState extends State<CustomEditor> {
   void _clearSelection() {
     _selStartRow = null;
     _selStartCol = null;
+    _multiSelections.clear();
   }
 
   /// Break undo coalescing so the next typed run is a fresh undo step. Called
@@ -386,6 +472,40 @@ class CustomEditorState extends State<CustomEditor> {
   /// selected text is removed but the emptied lines are left in place instead
   /// of the gap being closed — the line count is preserved.
   void _deleteSelection({bool keepBlankLines = false}) {
+    if (widget.readOnly) return;
+    if (_multiSelections.isNotEmpty) {
+      final sorted = List<SelectionRange>.from(_multiSelections);
+      sorted.sort((a, b) {
+        if (b.startRow != a.startRow) {
+          return b.startRow.compareTo(a.startRow);
+        }
+        return b.startCol.compareTo(a.startCol);
+      });
+      _session.beginGroup();
+      for (final range in sorted) {
+        int r1 = range.startRow;
+        int c1 = range.startCol;
+        int r2 = range.endRow;
+        int c2 = range.endCol;
+        if (r1 > r2 || (r1 == r2 && c1 > c2)) {
+          int temp = r1; r1 = r2; r2 = temp;
+          temp = c1; c1 = c2; c2 = temp;
+        }
+        _applyDelete(r1, c1, r2, c2);
+      }
+      _session.endGroup();
+      _multiSelections.clear();
+      _selStartRow = null;
+      _selStartCol = null;
+      if (sorted.isNotEmpty) {
+        final first = sorted.last;
+        _cursorRow = first.startRow;
+        _cursorCol = first.startCol;
+      }
+      widget.onContentChanged?.call();
+      return;
+    }
+
     if (_selStartRow == null || _selStartCol == null) return;
 
     if (_isBlockSelection) {
@@ -439,6 +559,7 @@ class CustomEditorState extends State<CustomEditor> {
 
   /// Swap the full contents of two lines as a single undo step.
   void _swapLines(int a, int b) {
+    if (widget.readOnly) return;
     final contentA = _getLineText(a);
     final contentB = _getLineText(b);
     final lenA = contentA.length;
@@ -502,6 +623,7 @@ class CustomEditorState extends State<CustomEditor> {
         }
 
         if (isLineMove) {
+          if (widget.readOnly) return;
           _clearSelection();
           final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
           final col = _cursorCol; // preserve the caret column across the move
@@ -569,9 +691,22 @@ class CustomEditorState extends State<CustomEditor> {
         _scrollToCursor();
         return;
       }
-      
       if (ctrl && !alt) {
         final label = event.logicalKey.keyLabel.toUpperCase();
+        if (label == 'C') {
+          _copySelection();
+          return;
+        } else if (label == 'A') {
+          _selStartRow = 0;
+          _selStartCol = 0;
+          _cursorRow = math.max(0, _visualLineCount - 1);
+          _cursorCol = _getLineLength(_cursorRow);
+          _scrollToCursor();
+          return;
+        }
+
+        if (widget.readOnly) return;
+
         if (label == 'Z') {
           if (shift) {
             _redo();
@@ -583,9 +718,6 @@ class CustomEditorState extends State<CustomEditor> {
         } else if (label == 'Y') {
           _redo();
           _notifyCursor();
-          return;
-        } else if (label == 'C') {
-          _copySelection();
           return;
         } else if (label == 'X') {
           if (_selStartRow != null && _selStartCol != null) {
@@ -604,6 +736,8 @@ class CustomEditorState extends State<CustomEditor> {
           return;
         }
       }
+
+      if (widget.readOnly) return;
 
       if (event.logicalKey == LogicalKeyboardKey.backspace || event.logicalKey == LogicalKeyboardKey.delete) {
         if (_selStartRow != null && _selStartCol != null) {
@@ -716,6 +850,12 @@ class CustomEditorState extends State<CustomEditor> {
   void _copySelection() {
     if (_selStartRow == null || _selStartCol == null) return;
     
+    if (_multiSelections.isNotEmpty) {
+      final text = _multiSelections.map((range) => _getRangeText(range.startRow, range.startCol, range.endRow, range.endCol)).join('\n');
+      Clipboard.setData(ClipboardData(text: text));
+      return;
+    }
+    
     StringBuffer sb = StringBuffer();
     if (_isBlockSelection) {
       int minR = math.min(_selStartRow!, _cursorRow);
@@ -759,6 +899,174 @@ class CustomEditorState extends State<CustomEditor> {
     }
     Clipboard.setData(ClipboardData(text: sb.toString()));
   }
+
+  void _selectWordAtCursor({required bool caseSensitive}) {
+    final line = _getLineText(_cursorRow);
+    if (line.isEmpty) return;
+    
+    int col = _cursorCol.clamp(0, line.length);
+    if (col == line.length && col > 0) {
+      col--;
+    }
+    
+    final wordChar = RegExp(r'[a-zA-Z0-9_]');
+    if (col >= line.length || !wordChar.hasMatch(line[col])) {
+      return;
+    }
+    
+    int startCol = col;
+    while (startCol > 0 && wordChar.hasMatch(line[startCol - 1])) {
+      startCol--;
+    }
+    
+    int endCol = col;
+    while (endCol < line.length && wordChar.hasMatch(line[endCol])) {
+      endCol++;
+    }
+    
+    final wholeWord = line.substring(startCol, endCol);
+    if (wholeWord.isEmpty) return;
+    
+    String targetText;
+    int selStart;
+    int selEnd;
+    
+    if (caseSensitive) {
+      final subWords = splitSubWords(wholeWord);
+      int relativeCol = col - startCol;
+      if (relativeCol >= wholeWord.length) {
+        relativeCol = wholeWord.length - 1;
+      }
+      relativeCol = math.max(0, relativeCol);
+      final match = subWords.firstWhere(
+        (sw) => relativeCol >= sw.$1 && relativeCol < sw.$2,
+        orElse: () => (0, wholeWord.length),
+      );
+      selStart = startCol + match.$1;
+      selEnd = startCol + match.$2;
+      targetText = wholeWord.substring(match.$1, match.$2);
+    } else {
+      selStart = startCol;
+      selEnd = endCol;
+      targetText = wholeWord;
+    }
+    
+    if (targetText.isEmpty) return;
+    
+    final matches = <SelectionRange>[];
+    final pattern = caseSensitive ? targetText : targetText.toLowerCase();
+    
+    for (int r = 0; r < _visualLineCount; r++) {
+      final lText = _getLineText(r);
+      final subWordRanges = getLineSubWordRanges(lText);
+      
+      int searchStart = 0;
+      while (true) {
+        final idx = caseSensitive 
+            ? lText.indexOf(targetText, searchStart)
+            : lText.toLowerCase().indexOf(pattern, searchStart);
+        if (idx == -1) break;
+        
+        final matchEnd = idx + targetText.length;
+        
+        if (caseSensitive) {
+          final isValid = subWordRanges.any((sw) => sw.$1 == idx && sw.$2 == matchEnd);
+          if (isValid) {
+            matches.add(SelectionRange(r, idx, r, matchEnd));
+          }
+        } else {
+          final beforeWord = idx == 0 || !wordChar.hasMatch(lText[idx - 1]);
+          final afterWord = matchEnd == lText.length || !wordChar.hasMatch(lText[matchEnd]);
+          if (beforeWord && afterWord) {
+            matches.add(SelectionRange(r, idx, r, matchEnd));
+          }
+        }
+        searchStart = idx + 1;
+      }
+    }
+    
+    setState(() {
+      _multiSelections.clear();
+      _multiSelections.addAll(matches);
+      _selStartRow = _cursorRow;
+      _selStartCol = selStart;
+      _cursorCol = selEnd;
+    });
+  }
+
+  List<(int, int)> splitSubWords(String word) {
+    if (word.isEmpty) return [];
+    final List<(int, int)> ranges = [];
+    int start = 0;
+    
+    while (start < word.length) {
+      if (word[start] == '_') {
+        start++;
+        continue;
+      }
+      
+      int end = start + 1;
+      if (end < word.length) {
+        if (_isUpper(word[start])) {
+          if (_isUpper(word[end])) {
+            while (end < word.length && _isUpper(word[end])) {
+              if (end + 1 < word.length && _isUpper(word[end]) && _isLower(word[end + 1])) {
+                break;
+              }
+              end++;
+            }
+          } else {
+            while (end < word.length && _isLower(word[end])) {
+              end++;
+            }
+          }
+        } else if (_isLower(word[start])) {
+          while (end < word.length && _isLower(word[end])) {
+            end++;
+          }
+        } else if (_isDigit(word[start])) {
+          while (end < word.length && _isDigit(word[end])) {
+            end++;
+          }
+        } else {
+          while (end < word.length && word[end] == word[start]) {
+            end++;
+          }
+        }
+      }
+      
+      ranges.add((start, end));
+      start = end;
+    }
+    return ranges;
+  }
+
+  List<(int, int)> getLineSubWordRanges(String line) {
+    final List<(int, int)> ranges = [];
+    final wordChar = RegExp(r'[a-zA-Z0-9_]');
+    int start = 0;
+    while (start < line.length) {
+      if (!wordChar.hasMatch(line[start])) {
+        start++;
+        continue;
+      }
+      int end = start;
+      while (end < line.length && wordChar.hasMatch(line[end])) {
+        end++;
+      }
+      final word = line.substring(start, end);
+      final subWords = splitSubWords(word);
+      for (final sw in subWords) {
+        ranges.add((start + sw.$1, start + sw.$2));
+      }
+      start = end;
+    }
+    return ranges;
+  }
+
+  bool _isUpper(String char) => char.codeUnitAt(0) >= 65 && char.codeUnitAt(0) <= 90;
+  bool _isLower(String char) => char.codeUnitAt(0) >= 97 && char.codeUnitAt(0) <= 122;
+  bool _isDigit(String char) => char.codeUnitAt(0) >= 48 && char.codeUnitAt(0) <= 57;
 
   Future<void> _pasteText() async {
     ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -897,6 +1205,10 @@ class CustomEditorState extends State<CustomEditor> {
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: (node, event) {
+        // Let Alt+X (toggle menu) bubble up.
+        if (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyX) {
+          return KeyEventResult.ignored;
+        }
         // Let app-level shortcuts (save / open / close tab / new) bubble up.
         if (HardwareKeyboard.instance.isControlPressed &&
             _bubbleShortcutKeys.contains(event.logicalKey)) {
@@ -911,6 +1223,15 @@ class CustomEditorState extends State<CustomEditor> {
           _breakCoalescing();
           double y = details.localPosition.dy + (_vScroll.hasClients ? _vScroll.offset : 0);
           double x = details.localPosition.dx + (_hScroll.hasClients ? _hScroll.offset : 0);
+          
+          final now = DateTime.now();
+          if (_lastTapTime != null && now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
+            _tapCount = (_tapCount + 1) % 4;
+          } else {
+            _tapCount = 1;
+          }
+          _lastTapTime = now;
+
           setState(() {
             _cursorRow = (y / _rowHeight).floor().clamp(0, _visualLineCount - 1);
             int unboundedCol = math.max(0, ((x - _gutterWidth) / _charWidth).round());
@@ -919,12 +1240,30 @@ class CustomEditorState extends State<CustomEditor> {
             } else {
                _cursorCol = unboundedCol.clamp(0, _getLineLength(_cursorRow));
             }
-            if (!HardwareKeyboard.instance.isShiftPressed) {
-              _selStartRow = null;
-              _selStartCol = null;
-            } else {
-              _selStartRow ??= _cursorRow;
-              _selStartCol ??= _cursorCol;
+            
+            if (_tapCount == 1) {
+              final ctrl = HardwareKeyboard.instance.isControlPressed;
+              if (ctrl) {
+                _selectWordAtCursor(caseSensitive: true);
+              } else {
+                if (!HardwareKeyboard.instance.isShiftPressed) {
+                  _selStartRow = null;
+                  _selStartCol = null;
+                  _multiSelections.clear();
+                } else {
+                  _selStartRow ??= _cursorRow;
+                  _selStartCol ??= _cursorCol;
+                }
+              }
+            } else if (_tapCount == 2) {
+              final ctrl = HardwareKeyboard.instance.isControlPressed;
+              _selectWordAtCursor(caseSensitive: ctrl);
+            } else if (_tapCount == 3) {
+              _multiSelections.clear();
+              _selStartRow = _cursorRow;
+              _selStartCol = 0;
+              _cursorCol = _getLineLength(_cursorRow);
+              _tapCount = 0;
             }
           });
         },
@@ -944,6 +1283,7 @@ class CustomEditorState extends State<CustomEditor> {
             }
             _selStartRow = _cursorRow;
             _selStartCol = _cursorCol;
+            _multiSelections.clear();
           });
         },
         onPanUpdate: (details) {
@@ -974,6 +1314,7 @@ class CustomEditorState extends State<CustomEditor> {
                   selStartRow: _selStartRow,
                   selStartCol: _selStartCol,
                   isBlockSelection: _isBlockSelection,
+                  multiSelections: _multiSelections,
                   caretOn: _focusNode.hasFocus && _caretVisible,
                   fontSize: _fontSize,
                   textColor: Theme.of(context).brightness == Brightness.light ? Colors.black : Colors.white,
@@ -1031,6 +1372,7 @@ class EditorPainter extends CustomPainter {
   final int? selStartRow;
   final int? selStartCol;
   final bool isBlockSelection;
+  final List<SelectionRange>? multiSelections;
   final String Function(int) getLineText;
   final bool caretOn;
   final Color textColor;
@@ -1054,6 +1396,7 @@ class EditorPainter extends CustomPainter {
     required this.selStartRow,
     required this.selStartCol,
     required this.isBlockSelection,
+    this.multiSelections,
     required this.getLineText,
     required this.caretOn,
     required this.textColor,
@@ -1076,7 +1419,27 @@ class EditorPainter extends CustomPainter {
     final int lastVisibleRow = (firstVisibleRow + visibleRowCount).clamp(0, visualLineCount);
     
     // Draw selection first so text renders on top
-    if (selStartRow != null && selStartCol != null) {
+    if (multiSelections != null && multiSelections!.isNotEmpty) {
+      Paint selPaint = Paint()..color = Colors.blue.withOpacity(0.4);
+      for (final range in multiSelections!) {
+        int r1 = range.startRow;
+        int c1 = range.startCol;
+        int r2 = range.endRow;
+        int c2 = range.endCol;
+        if (r1 > r2 || (r1 == r2 && c1 > c2)) {
+          int temp = r1; r1 = r2; r2 = temp;
+          temp = c1; c1 = c2; c2 = temp;
+        }
+        for (int i = r1; i <= r2; i++) {
+          if (i < firstVisibleRow || i > lastVisibleRow) continue;
+          String line = getLineText(i);
+          double startX = (i == r1) ? c1 * charWidth : 0;
+          double endX = (i == r2) ? c2 * charWidth : (line.length * charWidth + charWidth);
+          double y = (i * rowHeight) - scrollY;
+          canvas.drawRect(Rect.fromLTRB(startX, y, endX, y + rowHeight), selPaint);
+        }
+      }
+    } else if (selStartRow != null && selStartCol != null) {
       Paint selPaint = Paint()..color = Colors.blue.withOpacity(0.4);
       
       if (isBlockSelection) {
