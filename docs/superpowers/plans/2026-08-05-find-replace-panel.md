@@ -489,17 +489,40 @@ Add to the existing `#[cfg(test)] mod tests` in `rust/src/api/edit_session.rs`:
 
     #[test]
     fn find_matches_multiline_pattern_straddling_window_boundary() {
-        // 20 rows; a two-row match starts on row 9 and ends on row 10, while
-        // the window ends at row 10. The overlap must catch it.
+        // The document MUST be longer than to_row + SEARCH_WINDOW_OVERLAP_ROWS,
+        // or the scan clamps to the document end and the test passes even with
+        // an overlap of 1 — proving nothing about the overlap.
+        let rows = 10 + SEARCH_WINDOW_OVERLAP_ROWS + 50;
         let mut content = String::new();
-        for i in 0..20 {
+        for i in 0..rows {
             content.push_str(&format!("row{}\n", i));
         }
         let (s, _p) = session(&content);
+        // A two-row match starting on row 9, one row before the window end.
         let m = s.find_in_rows(regex_query("row9.row10", true), 0, 10).unwrap();
         assert_eq!(m.len(), 1, "overlap should catch the straddling match");
         assert_eq!(m[0].start_row, 9);
         assert_eq!(m[0].end_row, 10);
+    }
+
+    #[test]
+    fn find_does_not_reach_beyond_the_overlap() {
+        // The companion to the test above: together they fail if
+        // SEARCH_WINDOW_OVERLAP_ROWS shrinks or grows. A match starting well
+        // past to_row + overlap belongs to a later window, not this one.
+        let rows = 10 + SEARCH_WINDOW_OVERLAP_ROWS + 50;
+        let mut content = String::new();
+        for i in 0..rows {
+            content.push_str(&format!("row{}\n", i));
+        }
+        let (s, _p) = session(&content);
+        let beyond = 10 + SEARCH_WINDOW_OVERLAP_ROWS + 10;
+        let pattern = format!("row{}", beyond);
+        let m = s.find_in_rows(query(&pattern), 0, 10).unwrap();
+        assert!(
+            m.is_empty(),
+            "a match past to_row + overlap must not be returned by this window"
+        );
     }
 
     #[test]
@@ -533,8 +556,15 @@ Add to the existing `#[cfg(test)] mod tests` in `rust/src/api/edit_session.rs`:
     fn find_terminates_on_zero_length_match() {
         let (s, _p) = session("ab\n");
         // `x*` matches empty at every position; must advance, not loop.
+        // Assert the exact spans — a bare "fewer than N" bound tests neither
+        // termination (the process not hanging proves that) nor correctness.
         let m = s.find_in_rows(regex_query("x*", false), 0, 10).unwrap();
-        assert!(m.len() < 100, "zero-length matches must advance");
+        let spans: Vec<_> = m
+            .iter()
+            .map(|s| (s.start_row, s.start_col, s.end_row, s.end_col))
+            .collect();
+        // One zero-length match per character boundary, advancing by one.
+        assert_eq!(spans, vec![(0, 0, 0, 0), (0, 1, 0, 1), (0, 2, 0, 2)]);
     }
 
     #[test]
