@@ -63,6 +63,16 @@ fn u16_len(s: &str) -> usize {
     s.chars().map(|c| c.len_utf16()).sum()
 }
 
+/// True when `span` lies wholly inside `scope`.
+fn span_in_scope(
+    span: &crate::api::search::MatchSpan,
+    scope: &crate::api::search::SpanScope,
+) -> bool {
+    let after_start = (span.start_row, span.start_col) >= (scope.start_row, scope.start_col);
+    let before_end = (span.end_row, span.end_col) <= (scope.end_row, scope.end_col);
+    after_start && before_end
+}
+
 /// Byte index in `s` at the given UTF-16 column (clamped to the string end).
 fn u16_to_byte(s: &str, col: usize) -> usize {
     let mut u = 0;
@@ -686,6 +696,39 @@ impl EditSession {
         }
         Ok(out)
     }
+
+    /// Total matches in the document, or within `scope` when given. Pages the
+    /// whole document one window at a time so peak memory stays bounded.
+    pub fn count_matches(
+        &self,
+        query: crate::api::search::SearchQuery,
+        scope: Option<crate::api::search::SpanScope>,
+    ) -> anyhow::Result<usize> {
+        use crate::api::search::{SearchQuery, SEARCH_WINDOW_ROWS};
+
+        let total = self.line_count();
+        let mut count = 0usize;
+        let mut row = 0usize;
+        while row < total {
+            let to = (row + SEARCH_WINDOW_ROWS).min(total);
+            // SearchQuery is not Copy; rebuild it per window.
+            let q = SearchQuery {
+                pattern: query.pattern.clone(),
+                mode: query.mode.clone(),
+                match_case: query.match_case,
+                whole_word: query.whole_word,
+                dot_matches_newline: query.dot_matches_newline,
+            };
+            for span in self.find_in_rows(q, row, to)? {
+                match &scope {
+                    Some(sc) if !span_in_scope(&span, sc) => continue,
+                    _ => count += 1,
+                }
+            }
+            row = to;
+        }
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -1132,5 +1175,68 @@ mod tests {
     #[test]
     fn overlap_constant_is_used() {
         assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64);
+    }
+
+    use crate::api::search::SpanScope;
+
+    #[test]
+    fn count_matches_counts_whole_document() {
+        let (s, _p) = session("hit\nmiss\nhit\nhit\n");
+        assert_eq!(s.count_matches(query("hit"), None).unwrap(), 3);
+    }
+
+    #[test]
+    fn count_matches_returns_zero_when_absent() {
+        let (s, _p) = session("alpha\nbeta\n");
+        assert_eq!(s.count_matches(query("gamma"), None).unwrap(), 0);
+    }
+
+    #[test]
+    fn count_matches_spans_many_windows() {
+        // More rows than one window, so the sweep must page.
+        let mut content = String::new();
+        for _ in 0..(crate::api::search::SEARCH_WINDOW_ROWS + 500) {
+            content.push_str("hit\n");
+        }
+        let (s, _p) = session(&content);
+        let expected = crate::api::search::SEARCH_WINDOW_ROWS + 500;
+        assert_eq!(s.count_matches(query("hit"), None).unwrap(), expected);
+    }
+
+    #[test]
+    fn count_matches_respects_scope() {
+        let (s, _p) = session("hit\nhit\nhit\nhit\n");
+        let scope = SpanScope {
+            start_row: 1,
+            start_col: 0,
+            end_row: 3,
+            end_col: 0,
+        };
+        assert_eq!(s.count_matches(query("hit"), Some(scope)).unwrap(), 2);
+    }
+
+    #[test]
+    fn count_matches_scope_respects_columns() {
+        // Scope starts mid-row 0, so row 0's match at col 0 is excluded.
+        let (s, _p) = session("hit hit\n");
+        let scope = SpanScope {
+            start_row: 0,
+            start_col: 4,
+            end_row: 0,
+            end_col: 7,
+        };
+        assert_eq!(s.count_matches(query("hit"), Some(scope)).unwrap(), 1);
+    }
+
+    #[test]
+    fn count_matches_excludes_match_crossing_scope_end() {
+        let (s, _p) = session("hit\n");
+        let scope = SpanScope {
+            start_row: 0,
+            start_col: 0,
+            end_row: 0,
+            end_col: 2,
+        };
+        assert_eq!(s.count_matches(query("hit"), Some(scope)).unwrap(), 0);
     }
 }

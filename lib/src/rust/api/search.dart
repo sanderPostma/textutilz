@@ -6,7 +6,6 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SpanScope`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `compile`, `expand_replacement`
 
@@ -96,4 +95,33 @@ class SearchQuery {
           matchCase == other.matchCase &&
           wholeWord == other.wholeWord &&
           dotMatchesNewline == other.dotMatchesNewline;
+}
+
+/// A row/column range limiting a search ("In selection").
+class SpanScope {
+  final BigInt startRow;
+  final BigInt startCol;
+  final BigInt endRow;
+  final BigInt endCol;
+
+  const SpanScope({
+    required this.startRow,
+    required this.startCol,
+    required this.endRow,
+    required this.endCol,
+  });
+
+  @override
+  int get hashCode =>
+      startRow.hashCode ^ startCol.hashCode ^ endRow.hashCode ^ endCol.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SpanScope &&
+          runtimeType == other.runtimeType &&
+          startRow == other.startRow &&
+          startCol == other.startCol &&
+          endRow == other.endRow &&
+          endCol == other.endCol;
 }

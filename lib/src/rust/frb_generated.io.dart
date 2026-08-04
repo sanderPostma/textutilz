@@ -155,6 +155,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SearchQuery dco_decode_box_autoadd_search_query(dynamic raw);
 
   @protected
+  SpanScope dco_decode_box_autoadd_span_scope(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_usize(dynamic raw);
 
   @protected
@@ -230,6 +233,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CaretPos? dco_decode_opt_box_autoadd_caret_pos(dynamic raw);
 
   @protected
+  SpanScope? dco_decode_opt_box_autoadd_span_scope(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_usize(dynamic raw);
 
   @protected
@@ -237,6 +243,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SearchQuery dco_decode_search_query(dynamic raw);
+
+  @protected
+  SpanScope dco_decode_span_scope(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -364,6 +373,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SearchQuery sse_decode_box_autoadd_search_query(SseDeserializer deserializer);
 
   @protected
+  SpanScope sse_decode_box_autoadd_span_scope(SseDeserializer deserializer);
+
+  @protected
   BigInt sse_decode_box_autoadd_usize(SseDeserializer deserializer);
 
   @protected
@@ -441,6 +453,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CaretPos? sse_decode_opt_box_autoadd_caret_pos(SseDeserializer deserializer);
 
   @protected
+  SpanScope? sse_decode_opt_box_autoadd_span_scope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_usize(SseDeserializer deserializer);
 
   @protected
@@ -448,6 +465,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SearchQuery sse_decode_search_query(SseDeserializer deserializer);
+
+  @protected
+  SpanScope sse_decode_span_scope(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -600,6 +620,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_span_scope(
+    SpanScope self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_usize(BigInt self, SseSerializer serializer);
 
   @protected
@@ -705,6 +731,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_span_scope(
+    SpanScope? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_usize(BigInt? self, SseSerializer serializer);
 
   @protected
@@ -712,6 +744,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_search_query(SearchQuery self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_span_scope(SpanScope self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'search.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `u16_len`, `u16_to_byte`
+// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `span_in_scope`, `u16_len`, `u16_to_byte`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `UndoEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
@@ -31,6 +31,10 @@ abstract class EditSession implements RustOpaqueInterface {
   /// Fast copy of the entire document to the system clipboard on the Rust side.
   /// Returns the UTF-16 character count of the copied text.
   BigInt copyToClipboard();
+
+  /// Total matches in the document, or within `scope` when given. Pages the
+  /// whole document one window at a time so peak memory stays bounded.
+  Future<BigInt> countMatches({required SearchQuery query, SpanScope? scope});
 
   /// Create a scratch file at `path` containing `content` (creating parent
   /// dirs), then open a session over it. Keeps document IO on the Rust side so
