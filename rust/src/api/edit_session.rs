@@ -717,6 +717,15 @@ mod tests {
             .join("\n")
     }
 
+    /// `n` rows of the form "row0\n", "row1\n", ... "row{n-1}\n".
+    fn n_row_document(n: usize) -> String {
+        let mut content = String::new();
+        for i in 0..n {
+            content.push_str(&format!("row{}\n", i));
+        }
+        content
+    }
+
     #[test]
     fn reads_base_lines() {
         let (s, _p) = session("alpha\nbeta\ngamma");
@@ -1023,17 +1032,47 @@ mod tests {
 
     #[test]
     fn find_matches_multiline_pattern_straddling_window_boundary() {
-        // 20 rows; a two-row match starts on row 9 and ends on row 10, while
-        // the window ends at row 10. The overlap must catch it.
-        let mut content = String::new();
-        for i in 0..20 {
-            content.push_str(&format!("row{}\n", i));
-        }
+        // Enough rows that `to_row + SEARCH_WINDOW_OVERLAP_ROWS` (10 + 64 =
+        // 74) does NOT clamp to the document end -- otherwise the whole
+        // document gets scanned regardless of the overlap constant's value,
+        // and the test would pass vacuously. A match starting at row 9 (just
+        // before `to_row`) and ending at row 73 -- the very LAST row the
+        // scan reaches with the real overlap of 64 -- is only found because
+        // the overlap is exactly that big: shrink it by even one row and
+        // the scan no longer reaches row 73, and this match is lost.
+        // Hardcoded to 73, NOT derived from SEARCH_WINDOW_OVERLAP_ROWS: the
+        // point is to pin the test to the constant's current value (64) so
+        // that shrinking the constant breaks this test instead of silently
+        // moving the goalposts with it.
+        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
+        let content = n_row_document(100);
         let (s, _p) = session(&content);
-        let m = s.find_in_rows(regex_query("row9.row10", true), 0, 10).unwrap();
+        let m = s.find_in_rows(regex_query("row9.*row73", true), 0, 10).unwrap();
         assert_eq!(m.len(), 1, "overlap should catch the straddling match");
-        assert_eq!(m[0].start_row, 9);
-        assert_eq!(m[0].end_row, 10);
+        assert_eq!((m[0].start_row, m[0].start_col), (9, 0));
+        assert_eq!((m[0].end_row, m[0].end_col), (73, 5));
+    }
+
+    #[test]
+    fn find_does_not_reach_past_the_overlap_window() {
+        // A match starting at row 9 (still inside [from_row, to_row)) but
+        // requiring text one row past what the overlap covers (row 74, since
+        // the scan only reaches row 73 -- see the test above) must NOT be
+        // found: it belongs to no window's scan text at all. This is the
+        // documented limitation ("a match taller than this is not found")
+        // and it bounds the overlap from above: growing the constant would
+        // make this match appear.
+        // Hardcoded to 74 (one past the 73 in the test above) for the same
+        // reason: pinned to the constant's current value of 64, not derived
+        // from it, so growing the constant would break this test.
+        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
+        let content = n_row_document(100);
+        let (s, _p) = session(&content);
+        let m = s.find_in_rows(regex_query("row9.*row74", true), 0, 10).unwrap();
+        assert!(
+            m.is_empty(),
+            "a match reaching past the overlap window must not be found"
+        );
     }
 
     #[test]
@@ -1067,8 +1106,21 @@ mod tests {
     fn find_terminates_on_zero_length_match() {
         let (s, _p) = session("ab\n");
         // `x*` matches empty at every position; must advance, not loop.
+        // The document is two rows ("ab" and the trailing empty row), scanned
+        // as the joined text "ab\n" (3 bytes). A zero-length match occurs at
+        // every byte offset 0..=3: before 'a', before 'b', before '\n' (still
+        // row 0, since '\n' is the row separator, not row 1's content), and
+        // at the start of the empty row 1.
         let m = s.find_in_rows(regex_query("x*", false), 0, 10).unwrap();
-        assert!(m.len() < 100, "zero-length matches must advance");
+        let spans: Vec<(usize, usize, usize, usize)> = m
+            .iter()
+            .map(|sp| (sp.start_row, sp.start_col, sp.end_row, sp.end_col))
+            .collect();
+        assert_eq!(
+            spans,
+            vec![(0, 0, 0, 0), (0, 1, 0, 1), (0, 2, 0, 2), (1, 0, 1, 0)],
+            "zero-length matches must advance one position at a time and stop at document end"
+        );
     }
 
     #[test]
