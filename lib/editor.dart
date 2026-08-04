@@ -87,6 +87,10 @@ class CustomEditorState extends State<CustomEditor> {
   final List<SelectionRange> _multiSelections = [];
   DateTime? _lastTapTime;
   int _tapCount = 0;
+  int? _lastNotifiedRow;
+  int? _lastNotifiedCol;
+  int? _lastNotifiedSelStartRow;
+  int? _lastNotifiedSelStartCol;
 
   EditSession get _session => widget.session;
   int get _visualLineCount => _session.lineCount().toInt();
@@ -701,7 +705,8 @@ class CustomEditorState extends State<CustomEditor> {
           _selStartCol = 0;
           _cursorRow = math.max(0, _visualLineCount - 1);
           _cursorCol = _getLineLength(_cursorRow);
-          _scrollToCursor();
+          
+          _session.copyToClipboard();
           return;
         }
 
@@ -850,50 +855,82 @@ class CustomEditorState extends State<CustomEditor> {
   void _copySelection() {
     if (_selStartRow == null || _selStartCol == null) return;
     
+    int r1 = _selStartRow!;
+    int c1 = _selStartCol!;
+    int r2 = _cursorRow;
+    int c2 = _cursorCol;
+    
+    if (r1 > r2 || (r1 == r2 && c1 > c2)) {
+      int temp = r1; r1 = r2; r2 = temp;
+      temp = c1; c1 = c2; c2 = temp;
+    }
+    
+    // Fast path: if copying the entire document, do it natively in Rust
+    if (r1 == 0 && c1 == 0 && r2 == _visualLineCount - 1 && c2 == _getLineLength(r2)) {
+      _session.copyToClipboard();
+      return;
+    }
+    
     if (_multiSelections.isNotEmpty) {
       final text = _multiSelections.map((range) => _getRangeText(range.startRow, range.startCol, range.endRow, range.endCol)).join('\n');
       Clipboard.setData(ClipboardData(text: text));
       return;
     }
     
+    // For normal range copying, fetch the whole content once if it spans multiple lines to prevent N FFI roundtrips
     StringBuffer sb = StringBuffer();
     if (_isBlockSelection) {
-      int minR = math.min(_selStartRow!, _cursorRow);
-      int maxR = math.max(_selStartRow!, _cursorRow);
-      int minC = math.min(_selStartCol!, _cursorCol);
-      int maxC = math.max(_selStartCol!, _cursorCol);
-      
-      for (int i = minR; i <= maxR; i++) {
-        String line = _getLineText(i);
-        int start = math.min(minC, line.length);
-        int end = math.min(maxC, line.length);
-        sb.writeln(line.substring(start, end));
+      if (r2 - r1 > 50) {
+        final allLines = _session.contentString().split('\n');
+        for (int i = r1; i <= r2; i++) {
+          final line = allLines[i];
+          final start = math.min(c1, line.length);
+          final end = math.min(c2, line.length);
+          sb.writeln(line.substring(start, end));
+        }
+      } else {
+        for (int i = r1; i <= r2; i++) {
+          final line = _getLineText(i);
+          final start = math.min(c1, line.length);
+          final end = math.min(c2, line.length);
+          sb.writeln(line.substring(start, end));
+        }
       }
     } else {
-      int r1 = _selStartRow!;
-      int c1 = _selStartCol!;
-      int r2 = _cursorRow;
-      int c2 = _cursorCol;
-      
-      if (r1 > r2 || (r1 == r2 && c1 > c2)) {
-        int temp = r1; r1 = r2; r2 = temp;
-        temp = c1; c1 = c2; c2 = temp;
-      }
-      
-      for (int i = r1; i <= r2; i++) {
-        String line = _getLineText(i);
-        if (i == r1 && i == r2) {
-          int start = math.min(c1, line.length);
-          int end = math.min(c2, line.length);
-          sb.write(line.substring(start, end));
-        } else if (i == r1) {
-          int start = math.min(c1, line.length);
-          sb.writeln(line.substring(start));
-        } else if (i == r2) {
-          int end = math.min(c2, line.length);
-          sb.write(line.substring(0, end));
-        } else {
-          sb.writeln(line);
+      if (r2 - r1 > 50) {
+        final allLines = _session.contentString().split('\n');
+        for (int i = r1; i <= r2; i++) {
+          final line = allLines[i];
+          if (i == r1 && i == r2) {
+            final start = math.min(c1, line.length);
+            final end = math.min(c2, line.length);
+            sb.write(line.substring(start, end));
+          } else if (i == r1) {
+            final start = math.min(c1, line.length);
+            sb.writeln(line.substring(start));
+          } else if (i == r2) {
+            final end = math.min(c2, line.length);
+            sb.write(line.substring(0, end));
+          } else {
+            sb.writeln(line);
+          }
+        }
+      } else {
+        for (int i = r1; i <= r2; i++) {
+          final line = _getLineText(i);
+          if (i == r1 && i == r2) {
+            final start = math.min(c1, line.length);
+            final end = math.min(c2, line.length);
+            sb.write(line.substring(start, end));
+          } else if (i == r1) {
+            final start = math.min(c1, line.length);
+            sb.writeln(line.substring(start));
+          } else if (i == r2) {
+            final end = math.min(c2, line.length);
+            sb.write(line.substring(0, end));
+          } else {
+            sb.writeln(line);
+          }
         }
       }
     }
@@ -927,7 +964,6 @@ class CustomEditorState extends State<CustomEditor> {
     final wholeWord = line.substring(startCol, endCol);
     if (wholeWord.isEmpty) return;
     
-    String targetText;
     int selStart;
     int selEnd;
     
@@ -944,50 +980,13 @@ class CustomEditorState extends State<CustomEditor> {
       );
       selStart = startCol + match.$1;
       selEnd = startCol + match.$2;
-      targetText = wholeWord.substring(match.$1, match.$2);
     } else {
       selStart = startCol;
       selEnd = endCol;
-      targetText = wholeWord;
-    }
-    
-    if (targetText.isEmpty) return;
-    
-    final matches = <SelectionRange>[];
-    final pattern = caseSensitive ? targetText : targetText.toLowerCase();
-    
-    for (int r = 0; r < _visualLineCount; r++) {
-      final lText = _getLineText(r);
-      final subWordRanges = getLineSubWordRanges(lText);
-      
-      int searchStart = 0;
-      while (true) {
-        final idx = caseSensitive 
-            ? lText.indexOf(targetText, searchStart)
-            : lText.toLowerCase().indexOf(pattern, searchStart);
-        if (idx == -1) break;
-        
-        final matchEnd = idx + targetText.length;
-        
-        if (caseSensitive) {
-          final isValid = subWordRanges.any((sw) => sw.$1 == idx && sw.$2 == matchEnd);
-          if (isValid) {
-            matches.add(SelectionRange(r, idx, r, matchEnd));
-          }
-        } else {
-          final beforeWord = idx == 0 || !wordChar.hasMatch(lText[idx - 1]);
-          final afterWord = matchEnd == lText.length || !wordChar.hasMatch(lText[matchEnd]);
-          if (beforeWord && afterWord) {
-            matches.add(SelectionRange(r, idx, r, matchEnd));
-          }
-        }
-        searchStart = idx + 1;
-      }
     }
     
     setState(() {
       _multiSelections.clear();
-      _multiSelections.addAll(matches);
       _selStartRow = _cursorRow;
       _selStartCol = selStart;
       _cursorCol = selEnd;
@@ -1041,27 +1040,32 @@ class CustomEditorState extends State<CustomEditor> {
     return ranges;
   }
 
-  List<(int, int)> getLineSubWordRanges(String line) {
-    final List<(int, int)> ranges = [];
+  bool isSubWordBoundary(String s, int idx) {
+    if (idx <= 0 || idx >= s.length) return true;
+    
+    final cPrev = s[idx - 1];
+    final cCurr = s[idx];
+    
     final wordChar = RegExp(r'[a-zA-Z0-9_]');
-    int start = 0;
-    while (start < line.length) {
-      if (!wordChar.hasMatch(line[start])) {
-        start++;
-        continue;
+    final prevIsWord = wordChar.hasMatch(cPrev);
+    final currIsWord = wordChar.hasMatch(cCurr);
+    
+    if (prevIsWord != currIsWord) return true;
+    if (!prevIsWord) return false;
+    if (cPrev == '_' || cCurr == '_') return true;
+    
+    if (_isLower(cPrev) && _isUpper(cCurr)) return true;
+    if (_isUpper(cPrev) && _isUpper(cCurr)) {
+      if (idx + 1 < s.length && _isLower(s[idx + 1])) {
+        return true;
       }
-      int end = start;
-      while (end < line.length && wordChar.hasMatch(line[end])) {
-        end++;
-      }
-      final word = line.substring(start, end);
-      final subWords = splitSubWords(word);
-      for (final sw in subWords) {
-        ranges.add((start + sw.$1, start + sw.$2));
-      }
-      start = end;
     }
-    return ranges;
+    
+    final prevIsDigit = _isDigit(cPrev);
+    final currIsDigit = _isDigit(cCurr);
+    if (prevIsDigit != currIsDigit) return true;
+    
+    return false;
   }
 
   bool _isUpper(String char) => char.codeUnitAt(0) >= 65 && char.codeUnitAt(0) <= 90;
@@ -1154,8 +1158,20 @@ class CustomEditorState extends State<CustomEditor> {
     });
   }
 
-  void _notifyCursor() {
+   void _notifyCursor() {
     if (widget.onCursorChanged == null) return;
+    if (_cursorRow == _lastNotifiedRow &&
+        _cursorCol == _lastNotifiedCol &&
+        _selStartRow == _lastNotifiedSelStartRow &&
+        _selStartCol == _lastNotifiedSelStartCol) {
+      return;
+    }
+    
+    _lastNotifiedRow = _cursorRow;
+    _lastNotifiedCol = _cursorCol;
+    _lastNotifiedSelStartRow = _selStartRow;
+    _lastNotifiedSelStartCol = _selStartCol;
+    
     int selChars = 0;
     int selLines = 0;
     
@@ -1164,21 +1180,13 @@ class CustomEditorState extends State<CustomEditor> {
          selLines = (_cursorRow - _selStartRow!).abs() + 1;
          selChars = (_cursorCol - _selStartCol!).abs();
       } else {
-         int r1 = math.min(_selStartRow!, _cursorRow);
-         int r2 = math.max(_selStartRow!, _cursorRow);
-         selLines = r2 - r1 + 1;
-         if (r1 == r2) {
-           selChars = (_cursorCol - _selStartCol!).abs();
-         } else {
-           int c1 = (r1 == _selStartRow!) ? _selStartCol! : _cursorCol;
-           int c2 = (r2 == _cursorRow) ? _cursorCol : _selStartCol!;
-           int chars = math.max(0, _getLineLength(r1) - c1);
-           for (int i = r1 + 1; i < r2; i++) {
-             chars += _getLineLength(i) + 1;
-           }
-           chars += math.min(c2, _getLineLength(r2)) + 1;
-           selChars = chars;
-         }
+         selLines = (_cursorRow - _selStartRow!).abs() + 1;
+         selChars = _session.selectionCharCount(
+           r1: BigInt.from(_selStartRow!),
+           c1: BigInt.from(_selStartCol!),
+           r2: BigInt.from(_cursorRow),
+           c2: BigInt.from(_cursorCol),
+         ).toInt();
       }
     }
     
@@ -1430,8 +1438,9 @@ class EditorPainter extends CustomPainter {
           int temp = r1; r1 = r2; r2 = temp;
           temp = c1; c1 = c2; c2 = temp;
         }
-        for (int i = r1; i <= r2; i++) {
-          if (i < firstVisibleRow || i > lastVisibleRow) continue;
+        final int startRow = math.max(r1, firstVisibleRow);
+        final int endRow = math.min(r2, lastVisibleRow);
+        for (int i = startRow; i <= endRow; i++) {
           String line = getLineText(i);
           double startX = (i == r1) ? c1 * charWidth : 0;
           double endX = (i == r2) ? c2 * charWidth : (line.length * charWidth + charWidth);
@@ -1448,8 +1457,9 @@ class EditorPainter extends CustomPainter {
         int minC = math.min(selStartCol!, cursorCol);
         int maxC = math.max(selStartCol!, cursorCol);
         
-        for (int i = minR; i <= maxR; i++) {
-          if (i < firstVisibleRow || i > lastVisibleRow) continue;
+        final int startRow = math.max(minR, firstVisibleRow);
+        final int endRow = math.min(maxR, lastVisibleRow);
+        for (int i = startRow; i <= endRow; i++) {
           double startX = minC * charWidth;
           double endX = maxC * charWidth;
           double y = (i * rowHeight) - scrollY;
@@ -1466,9 +1476,9 @@ class EditorPainter extends CustomPainter {
           temp = c1; c1 = c2; c2 = temp;
         }
         
-        for (int i = r1; i <= r2; i++) {
-          if (i < firstVisibleRow || i > lastVisibleRow) continue;
-          
+        final int startRow = math.max(r1, firstVisibleRow);
+        final int endRow = math.min(r2, lastVisibleRow);
+        for (int i = startRow; i <= endRow; i++) {
           String line = getLineText(i);
           
           double startX = (i == r1) ? c1 * charWidth : 0;

@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:textutilz/src/rust/api/file_manager.dart';
 import 'package:textutilz/src/rust/api/edit_session.dart';
+import 'package:textutilz/src/rust/api/hex_session.dart' show isBinaryFile;
 import 'package:textutilz/src/rust/api/store.dart';
 import 'package:textutilz/src/rust/api/paths.dart' as rust_paths;
 import 'package:textutilz/src/rust/frb_generated.dart';
@@ -15,6 +16,7 @@ import 'mime_tools_panel.dart';
 import 'edit_tools_panel.dart';
 import 'document_state.dart';
 import 'jwt_tools_panel.dart';
+import 'hex_editor_view.dart';
 import 'package:textutilz/src/rust/api/edit_ops.dart' as rust_edit_ops;
 
 
@@ -379,13 +381,19 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       try {
         final session = EditSession.open(path: path);
         String name = path.split('/').last;
+        // Binary files open straight into the hex editor; text files start in
+        // Read mode. Either can be toggled per tab afterwards.
+        bool binary = false;
+        try {
+          binary = isBinaryFile(path: path);
+        } catch (_) {}
         setState(() {
           _tabs.add(TabRuntime(
             meta: DocumentMeta(
               id: DocumentMeta.newId(),
               displayName: name,
               path: path,
-              viewMode: ViewMode.read,
+              viewMode: binary ? ViewMode.hex : ViewMode.read,
             ),
             session: session,
           ));
@@ -494,6 +502,17 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// Transient docs route through the Save-As dialog. Returns false if the user
   /// cancels the Save-As dialog.
   Future<bool> _saveTab(TabRuntime tab) async {
+    // Hex mode saves the byte session; refresh the text session so a later
+    // toggle back to a text view reflects the bytes now on disk.
+    if (tab.meta.viewMode == ViewMode.hex) {
+      final hs = tab.hexSession;
+      if (!hs.isDirty()) return true;
+      hs.save();
+      tab.session.refresh();
+      if (mounted) setState(() {});
+      _persistSession();
+      return true;
+    }
     if (!tab.session.isDirty()) return true;
     if (tab.meta.isTransient) {
       final suggested = '${tab.meta.displayName}.${tab.meta.extension}';
@@ -643,7 +662,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
 
   Future<void> _saveFile() async {
     final tab = _activeTab;
-    if (tab == null || tab.mode != ViewMode.edit) return;
+    if (tab == null || (tab.mode != ViewMode.edit && tab.mode != ViewMode.hex)) return;
     // Auto-delete documents are ephemeral by design and must not save.
     if (tab.meta.autoDelete != AutoDelete.off) return;
     await _saveTab(tab);
@@ -706,7 +725,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                         _isRibbonVisible = !_isRibbonVisible;
                       });
                     },
-                    tooltip: 'Menu',
+                    tooltip: 'Menu (Alt-X)',
                   ),
                   const SizedBox(width: 8),
                   if (_activeTab?.activeTool?.startsWith('jwt') == true)
@@ -753,6 +772,24 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                         ),
                         const SizedBox(width: 12),
                         const Text('Tool', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    )
+                  else if (_activeTab?.mode == ViewMode.hex)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.arrow_back, size: 16, color: Colors.white),
+                          label: const Text('Exit Hex', style: TextStyle(color: Colors.white)),
+                          onPressed: () {
+                            setState(() {
+                              _activeTab!.mode = ViewMode.read;
+                            });
+                            _persistSession();
+                          },
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Hex Editor', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                       ],
                     )
                   else
@@ -906,6 +943,27 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           key: ValueKey('jwt-${_activeTab!.meta.id}'),
                           initialEncoded: _activeTab!.session.contentString(),
                           mode: _activeTab!.activeTool == 'jwt.encode' ? JwtMode.encode : JwtMode.decode,
+                        ),
+                      )
+                    else if (_activeTab != null && _activeTab!.mode == ViewMode.hex)
+                      Expanded(
+                        child: HexEditorView(
+                          key: ValueKey('hex-${_activeTab!.meta.id}'),
+                          session: _activeTab!.hexSession,
+                          settings: HexViewSettings(
+                            fontSize: _activeTab!.meta.fontSizeFor(ViewMode.hex),
+                          ),
+                          onFontSizeChanged: (size) =>
+                              _setActiveFontSize(ViewMode.hex, size),
+                          onContentChanged: () => setState(() {}),
+                          onCursorChanged: (offset, totalLen) {
+                            // Reuse EditorStats to carry byte offset / length;
+                            // the status bar formats them for hex mode.
+                            _activeTab!.stats.value = EditorStats(
+                              row: offset,
+                              col: totalLen,
+                            );
+                          },
                         ),
                       )
                     else if (_activeTab != null && _activeTab!.mode == ViewMode.edit)
@@ -1066,6 +1124,15 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           _persistSession();
                         }
                       },
+                      onEnterHex: () {
+                        if (_activeTab != null) {
+                          setState(() {
+                            _activeTab!.mode = ViewMode.hex;
+                            _isRibbonVisible = false;
+                          });
+                          _persistSession();
+                        }
+                      },
                       onCloseTab: _activeTab != null ? _closeActiveTab : null,
                     ),
                   ),
@@ -1103,6 +1170,13 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             ValueListenableBuilder<EditorStats>(
                               valueListenable: _activeTab!.stats,
                               builder: (context, stats, child) {
+                                if (_activeTab?.mode == ViewMode.hex) {
+                                  final off = stats.row;
+                                  return Text(
+                                    'Offset: 0x${off.toRadixString(16).toUpperCase()} ($off)  Bytes: ${stats.col}',
+                                    style: const TextStyle(fontSize: 12),
+                                  );
+                                }
                                 String sel = stats.selChars > 0 ? "  Sel: ${stats.selChars} | ${stats.selLines}" : "";
                                 return Text('Ln: ${stats.row}  Col: ${stats.col}$sel', style: const TextStyle(fontSize: 12));
                               }

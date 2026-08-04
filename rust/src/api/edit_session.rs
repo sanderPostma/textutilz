@@ -109,10 +109,102 @@ impl EditSession {
     /// '\n'. Used to capture scratch-document content for persistence.
     #[flutter_rust_bridge::frb(sync)]
     pub fn content_string(&self) -> String {
-        (0..self.line_count())
-            .map(|i| self.get_line_visual(i))
-            .collect::<Vec<_>>()
-            .join("\n")
+        // Read the entire base file once to avoid massive OS file open/close syscall overhead
+        let original_content = match std::fs::read(&self.base.path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(_) => String::new(),
+        };
+
+        // Split into lines and strip trailing carriage returns
+        let base_lines: Vec<String> = original_content
+            .split('\n')
+            .map(|line| {
+                if line.ends_with('\r') {
+                    line[..line.len() - 1].to_string()
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect();
+
+        let line_count = self.line_count();
+        let mut result_lines = Vec::with_capacity(line_count);
+
+        for vrow in 0..line_count {
+            let (orow, sub) = self.get_logical(vrow);
+            if let Some(lines) = self.overlay.get(&orow) {
+                if let Some(line) = lines.get(sub) {
+                    result_lines.push(line.clone());
+                } else {
+                    result_lines.push(String::new());
+                }
+            } else {
+                if let Some(line) = base_lines.get(orow) {
+                    result_lines.push(line.clone());
+                } else {
+                    result_lines.push(String::new());
+                }
+            }
+        }
+
+        result_lines.join("\n")
+    }
+
+    /// Fast copy of the entire document to the system clipboard on the Rust side.
+    /// Returns the UTF-16 character count of the copied text.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn copy_to_clipboard(&self) -> anyhow::Result<usize> {
+        let text = self.content_string();
+        let len = u16_len(&text);
+        let mut ctx = arboard::Clipboard::new()
+            .map_err(|e| anyhow::anyhow!("Failed to initialize clipboard: {}", e))?;
+        ctx.set_text(text)
+            .map_err(|e| anyhow::anyhow!("Failed to set clipboard text: {}", e))?;
+        Ok(len)
+    }
+
+    /// Calculate selection character count extremely fast (combining small range exact counting and large range O(1) estimation)
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn selection_char_count(&self, mut r1: usize, mut c1: usize, mut r2: usize, mut c2: usize) -> usize {
+        let line_count = self.line_count();
+        if line_count == 0 {
+            return 0;
+        }
+        if r1 >= line_count { r1 = line_count - 1; }
+        if r2 >= line_count { r2 = line_count - 1; }
+        
+        if r1 > r2 || (r1 == r2 && c1 > c2) {
+            std::mem::swap(&mut r1, &mut r2);
+            std::mem::swap(&mut c1, &mut c2);
+        }
+        
+        let mut total_chars = 0;
+        let diff = r2 - r1;
+        if diff < 100 {
+            for r in r1..=r2 {
+                let line = self.get_line_visual(r);
+                let len = u16_len(&line);
+                let start = if r == r1 { std::cmp::min(c1, len) } else { 0 };
+                let end = if r == r2 { std::cmp::min(c2, len) } else { len };
+                total_chars += end.saturating_sub(start);
+                if r < r2 {
+                    total_chars += 1; // newline
+                }
+            }
+        } else {
+            let start_offset = if r1 < self.base.line_offsets.len() {
+                self.base.line_offsets[r1] + c1
+            } else {
+                self.base.size
+            };
+            let end_offset = if r2 < self.base.line_offsets.len() {
+                self.base.line_offsets[r2] + c2
+            } else {
+                self.base.size
+            };
+            total_chars = end_offset.saturating_sub(start_offset);
+        }
+        total_chars
     }
 
     #[flutter_rust_bridge::frb(sync)]

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:textutilz/src/rust/api/edit_session.dart';
+import 'package:textutilz/src/rust/api/hex_session.dart';
 import 'package:textutilz/src/rust/api/store.dart';
 import 'editor.dart';
 
@@ -33,7 +34,8 @@ class ViewMode {
   static const String read = 'Read';
   static const String tail = 'Tail';
   static const String edit = 'Edit';
-  static const List<String> all = [read, tail, edit];
+  static const String hex = 'Hex';
+  static const List<String> all = [read, tail, edit, hex];
 }
 
 /// Auto-delete policy for transient (scratch) documents.
@@ -79,7 +81,12 @@ class DocumentMeta {
     Map<String, double>? fontSizes,
   })  : createdDay = createdDay ?? currentEpochDay(),
         fontSizes = fontSizes ??
-            {ViewMode.read: 14.0, ViewMode.tail: 14.0, ViewMode.edit: 14.0};
+            {
+              ViewMode.read: 14.0,
+              ViewMode.tail: 14.0,
+              ViewMode.edit: 14.0,
+              ViewMode.hex: 14.0,
+            };
 
   double fontSizeFor(String mode) => fontSizes[mode] ?? 14.0;
   void setFontSize(String mode, double size) => fontSizes[mode] = size;
@@ -151,6 +158,15 @@ class TabRuntime {
   /// instead of the standard Read/Tail/Edit viewer.
   String? activeTool;
 
+  /// Byte-oriented editable document for [ViewMode.hex], created lazily the
+  /// first time the tab is shown in hex mode. Separate from [session] (the
+  /// text/line document); the two carry independent overlays.
+  HexSession? _hexSession;
+
+  /// The hex document for this tab, opening it over the same file on first use.
+  HexSession get hexSession =>
+      _hexSession ??= HexSession.open(path: meta.path);
+
   TabRuntime({required this.meta, required this.session});
 
   // Convenience pass-throughs so call sites stay concise.
@@ -160,8 +176,11 @@ class TabRuntime {
   set mode(String m) => meta.viewMode = m;
   int get lineCount => session.lineCount().toInt();
 
-  /// Dirtiness is owned by the Rust session (cleared on save).
-  bool get isDirty => session.isDirty();
+  /// Dirtiness is owned by the Rust session (cleared on save). In hex mode the
+  /// byte session is the source of truth.
+  bool get isDirty => meta.viewMode == ViewMode.hex
+      ? (_hexSession?.isDirty() ?? false)
+      : session.isDirty();
   double get fontSize => meta.fontSizeFor(meta.viewMode);
 
   /// Snapshot this tab as a persistable [DocRecord]. Scratch (transient) docs

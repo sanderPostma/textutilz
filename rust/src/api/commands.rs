@@ -269,6 +269,18 @@ impl CommandRegistry {
             action_id: Some("tools.jwt".to_string()),
         });
 
+        // Hex Editor
+        self.commands.push(CommandDescriptor {
+            id: "tools.hex".to_string(),
+            title: "Hex Editor".to_string(),
+            category: "Tools".to_string(),
+            icon: Some("memory".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tools.hex".to_string()),
+        });
+
         // NPP Edit Group Panels
         self.commands.push(CommandDescriptor {
             id: "edit.case".to_string(),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:textutilz/src/rust/api/commands.dart';
 import 'document_state.dart';
 import 'mime_tools_panel.dart';
@@ -98,6 +99,9 @@ class MenuRibbon extends StatefulWidget {
   /// Invoked when a tool mode should be activated for the current tab.
   final ValueChanged<String>? onEnterToolMode;
 
+  /// Invoked when the current tab should switch to the hex editor view.
+  final VoidCallback? onEnterHex;
+
   const MenuRibbon({
     super.key,
     this.onOpen,
@@ -123,6 +127,7 @@ class MenuRibbon extends StatefulWidget {
     this.onCreateDocument,
     this.onSearchChanged,
     this.onEnterToolMode,
+    this.onEnterHex,
   });
 
   @override
@@ -140,6 +145,8 @@ class _MenuRibbonState extends State<MenuRibbon> {
   void initState() {
     super.initState();
     _registry = getCommandRegistry();
+    // Esc clears the search field when it has text.
+    _searchFocus.onKeyEvent = _handleSearchKey;
     if (widget.autoOpenNew) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -194,6 +201,19 @@ class _MenuRibbonState extends State<MenuRibbon> {
     widget.onSearchChanged?.call(value);
   }
 
+  /// Clears the search field on Esc (only while it has text, so an empty-field
+  /// Esc still bubbles up to whatever wants to close the ribbon).
+  KeyEventResult _handleSearchKey(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        _query.isNotEmpty) {
+      _searchController.clear();
+      _onQueryChanged('');
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   IconData _parseIcon(String? iconName) {
     switch (iconName) {
       case 'note_add': return Icons.note_add;
@@ -215,6 +235,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'keyboard_return': return Icons.keyboard_return;
       case 'space_bar': return Icons.space_bar;
       case 'comment': return Icons.comment;
+      case 'memory': return Icons.memory;
       default: return Icons.extension;
     }
   }
@@ -232,6 +253,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'view.linenumbers': return widget.onToggleLineNumbers;
       case 'view.wordwrap': return widget.onToggleWordWrap;
       case 'tools.jwt': return widget.onEnterToolMode != null ? () => widget.onEnterToolMode!('jwt.decode') : null;
+      case 'tools.hex': return widget.onEnterHex;
       default: return null;
     }
   }
@@ -333,6 +355,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
           entries: [
             entry('tools.mime'),
             entry('tools.jwt'),
+            entry('tools.hex'),
           ],
         ),
       ];

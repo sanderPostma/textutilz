@@ -27,6 +27,10 @@ abstract class EditSession implements RustOpaqueInterface {
   /// '\n'. Used to capture scratch-document content for persistence.
   String contentString();
 
+  /// Fast copy of the entire document to the system clipboard on the Rust side.
+  /// Returns the UTF-16 character count of the copied text.
+  BigInt copyToClipboard();
+
   /// Create a scratch file at `path` containing `content` (creating parent
   /// dirs), then open a session over it. Keeps document IO on the Rust side so
   /// Dart never writes files itself. Used to rehydrate persisted scratch docs.
@@ -77,6 +81,14 @@ abstract class EditSession implements RustOpaqueInterface {
   void save();
 
   void saveAs({required String newPath});
+
+  /// Calculate selection character count extremely fast (combining small range exact counting and large range O(1) estimation)
+  BigInt selectionCharCount({
+    required BigInt r1,
+    required BigInt c1,
+    required BigInt r2,
+    required BigInt c2,
+  });
 
   CaretPos? undo();
 }

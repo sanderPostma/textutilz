@@ -8,6 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 anyhow = "1.0.103"
+arboard = "3.4.1"
 base64 = "0.22"
 diesel = { version = "2.3.11", default-features = false, features = ["sqlite"] }
 dirs = "6"

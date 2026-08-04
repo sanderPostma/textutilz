@@ -32,7 +32,7 @@ impl FileBuffer {
         Ok((current_offset, line_offsets))
     }
 
-    fn read_bytes(&self, start: usize, end: usize) -> anyhow::Result<Vec<u8>> {
+    pub(crate) fn read_bytes(&self, start: usize, end: usize) -> anyhow::Result<Vec<u8>> {
         if start >= end {
             return Ok(Vec::new());
         }
