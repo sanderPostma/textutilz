@@ -1596,6 +1596,7 @@ dependencies = [
  "libsqlite3-sys",
  "percent-encoding",
  "quoted_printable",
+ "regex",
  "rfd",
  "serde",
  "serde_json",

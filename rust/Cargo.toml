@@ -18,6 +18,7 @@ jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 percent-encoding = "2.3"
 quoted_printable = "0.5"
+regex = "1"
 rfd = "0.17.2"
 serde = "1.0.228"
 serde_json = "1.0.150"
