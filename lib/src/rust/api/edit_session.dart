@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'search.dart';
 
 // These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `u16_len`, `u16_to_byte`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `UndoEntry`
@@ -51,6 +52,18 @@ abstract class EditSession implements RustOpaqueInterface {
 
   /// Finalize the current group.
   void endGroup();
+
+  /// Find every match whose start row is in `[from_row, to_row)`.
+  ///
+  /// The scan itself reaches `SEARCH_WINDOW_OVERLAP_ROWS` rows past
+  /// `to_row` so a multi-line match straddling the boundary is still found,
+  /// but such a match is only returned by the window its *start* falls in.
+  /// Consecutive windows therefore tile exactly, with no duplicates.
+  Future<List<MatchSpan>> findInRows({
+    required SearchQuery query,
+    required BigInt fromRow,
+    required BigInt toRow,
+  });
 
   CaretPos insert({
     required BigInt row,

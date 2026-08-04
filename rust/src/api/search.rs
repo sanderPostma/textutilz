@@ -101,6 +101,10 @@ pub fn unescape_extended(s: &str) -> anyhow::Result<String> {
 
 /// Lower any search mode to a single regex. This is the one place a mode is
 /// interpreted; every caller goes through it.
+///
+/// Rust-internal only: `Regex` cannot cross the bridge, so this is not
+/// callable from Dart.
+#[flutter_rust_bridge::frb(ignore)]
 pub fn compile(query: &SearchQuery) -> anyhow::Result<Regex> {
     if query.pattern.is_empty() {
         anyhow::bail!("empty pattern");
@@ -133,6 +137,10 @@ pub fn compile(query: &SearchQuery) -> anyhow::Result<Regex> {
 
 /// Build the replacement text for one match. Capture references are honored
 /// only in Regex mode; Normal mode keeps `$1` literal, as Notepad++ does.
+///
+/// Rust-internal only: `Captures` cannot cross the bridge, so this is not
+/// callable from Dart.
+#[flutter_rust_bridge::frb(ignore)]
 pub fn expand_replacement(
     mode: &SearchMode,
     caps: &Captures,

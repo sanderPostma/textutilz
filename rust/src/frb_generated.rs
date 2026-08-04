@@ -29,7 +29,6 @@
 use crate::api::edit_session::*;
 use crate::api::file_manager::*;
 use crate::api::hex_session::*;
-use crate::api::search::*;
 use crate::api::store::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
@@ -43,7 +42,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -663888633;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -804883491;
 
 // Section: executor
 
@@ -715,6 +714,65 @@ fn wire__crate__api__edit_session__EditSession_end_group_impl(
                 })?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__edit_session__EditSession_find_in_rows_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "EditSession_find_in_rows",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<EditSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_query = <crate::api::search::SearchQuery>::sse_decode(&mut deserializer);
+            let api_from_row = <usize>::sse_decode(&mut deserializer);
+            let api_to_row = <usize>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::edit_session::EditSession::find_in_rows(
+                            &*api_that_guard,
+                            api_query,
+                            api_from_row,
+                            api_to_row,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
+            }
         },
     )
 }
@@ -3317,41 +3375,6 @@ fn wire__crate__api__commands__command_registry_search_impl(
         },
     )
 }
-fn wire__crate__api__search__compile_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "compile",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_query = <crate::api::search::SearchQuery>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || {
-                        let output_ok = crate::api::search::compile(&api_query)?;
-                        Ok(output_ok)
-                    })(),
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__edit_ops__convert_eol_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3515,63 +3538,6 @@ fn wire__crate__api__edit_ops__eol_to_space_impl(
                         Result::<_, ()>::Ok(crate::api::edit_ops::eol_to_space(&api_input))?;
                     Ok(output_ok)
                 })())
-            }
-        },
-    )
-}
-fn wire__crate__api__search__expand_replacement_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "expand_replacement",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_mode = <crate::api::search::SearchMode>::sse_decode(&mut deserializer);
-            let api_caps = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>,
-            >>::sse_decode(&mut deserializer);
-            let api_template = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || {
-                        let mut api_caps_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_caps, 0, false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => api_caps_guard = Some(api_caps.lockable_decode_sync_ref()),
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_caps_guard = api_caps_guard.unwrap();
-                        let output_ok = crate::api::search::expand_replacement(
-                            &api_mode,
-                            &*api_caps_guard,
-                            &api_template,
-                        )?;
-                        Ok(output_ok)
-                    })(),
-                )
             }
         },
     )
@@ -4440,9 +4406,6 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
-    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>
-);
-flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<EditSession>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
@@ -4450,9 +4413,6 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>
-);
-flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
-    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>
 );
 
 // Section: dart2rust
@@ -4505,28 +4465,8 @@ impl SseDecode for HexSession {
     }
 }
 
-impl SseDecode for Regex {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>,
-        >>::sse_decode(deserializer);
-        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
-    }
-}
-
 impl SseDecode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>>
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <usize>::sse_decode(deserializer);
-        return decode_rust_opaque_moi(inner);
-    }
-}
-
-impl SseDecode
-    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4558,14 +4498,6 @@ impl SseDecode
 impl SseDecode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>>
 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <usize>::sse_decode(deserializer);
-        return decode_rust_opaque_moi(inner);
-    }
-}
-
-impl SseDecode for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <usize>::sse_decode(deserializer);
@@ -4820,6 +4752,18 @@ impl SseDecode for Vec<crate::api::file_manager::LineEdit> {
     }
 }
 
+impl SseDecode for Vec<crate::api::search::MatchSpan> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::search::MatchSpan>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4841,6 +4785,22 @@ impl SseDecode for Vec<usize> {
             ans_.push(<usize>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::search::MatchSpan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_startRow = <usize>::sse_decode(deserializer);
+        let mut var_startCol = <usize>::sse_decode(deserializer);
+        let mut var_endRow = <usize>::sse_decode(deserializer);
+        let mut var_endCol = <usize>::sse_decode(deserializer);
+        return crate::api::search::MatchSpan {
+            start_row: var_startRow,
+            start_col: var_startCol,
+            end_row: var_endRow,
+            end_col: var_endCol,
+        };
     }
 }
 
@@ -4962,50 +4922,54 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        66 => wire__crate__api__edit_ops__block_comment_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__edit_ops__block_uncomment_impl(port, ptr, rust_vec_len, data_len),
-        69 => {
+        15 => wire__crate__api__edit_session__EditSession_find_in_rows_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        67 => wire__crate__api__edit_ops__block_comment_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__edit_ops__block_uncomment_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__commands__command_registry_new_impl(port, ptr, rust_vec_len, data_len)
         }
-        71 => wire__crate__api__search__compile_impl(port, ptr, rust_vec_len, data_len),
         72 => wire__crate__api__edit_ops__convert_eol_impl(port, ptr, rust_vec_len, data_len),
         76 => wire__crate__api__edit_ops__eol_to_space_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__search__expand_replacement_impl(port, ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__edit_ops__invert_case_impl(port, ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__file_manager__pick_file_impl(port, ptr, rust_vec_len, data_len),
-        82 => {
+        78 => wire__crate__api__edit_ops__invert_case_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__file_manager__pick_file_impl(port, ptr, rust_vec_len, data_len),
+        81 => {
             wire__crate__api__file_manager__pick_save_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        83 => wire__crate__api__edit_ops__proper_case_impl(port, ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__edit_ops__random_case_impl(port, ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__edit_ops__sentence_case_impl(port, ptr, rust_vec_len, data_len),
-        90 => {
+        82 => wire__crate__api__edit_ops__proper_case_impl(port, ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__edit_ops__random_case_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__edit_ops__sentence_case_impl(port, ptr, rust_vec_len, data_len),
+        89 => {
             wire__crate__api__edit_ops__single_line_comment_impl(port, ptr, rust_vec_len, data_len)
         }
-        91 => wire__crate__api__edit_ops__single_line_uncomment_impl(
+        90 => wire__crate__api__edit_ops__single_line_uncomment_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        92 => wire__crate__api__edit_ops__space_to_tab_impl(port, ptr, rust_vec_len, data_len),
-        93 => wire__crate__api__edit_ops__tab_to_space_impl(port, ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__edit_ops__toggle_single_line_comment_impl(
+        91 => wire__crate__api__edit_ops__space_to_tab_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__edit_ops__tab_to_space_impl(port, ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__edit_ops__toggle_single_line_comment_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        95 => wire__crate__api__edit_ops__trim_both_impl(port, ptr, rust_vec_len, data_len),
-        96 => wire__crate__api__edit_ops__trim_both_and_eol_to_space_impl(
+        94 => wire__crate__api__edit_ops__trim_both_impl(port, ptr, rust_vec_len, data_len),
+        95 => wire__crate__api__edit_ops__trim_both_and_eol_to_space_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        97 => wire__crate__api__edit_ops__trim_leading_impl(port, ptr, rust_vec_len, data_len),
-        98 => wire__crate__api__edit_ops__trim_trailing_impl(port, ptr, rust_vec_len, data_len),
-        99 => wire__crate__api__search__unescape_extended_impl(port, ptr, rust_vec_len, data_len),
+        96 => wire__crate__api__edit_ops__trim_leading_impl(port, ptr, rust_vec_len, data_len),
+        97 => wire__crate__api__edit_ops__trim_trailing_impl(port, ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__search__unescape_extended_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5054,153 +5018,153 @@ fn pde_ffi_dispatcher_sync_impl(
         14 => {
             wire__crate__api__edit_session__EditSession_end_group_impl(ptr, rust_vec_len, data_len)
         }
-        15 => wire__crate__api__edit_session__EditSession_insert_impl(ptr, rust_vec_len, data_len),
-        16 => {
+        16 => wire__crate__api__edit_session__EditSession_insert_impl(ptr, rust_vec_len, data_len),
+        17 => {
             wire__crate__api__edit_session__EditSession_is_dirty_impl(ptr, rust_vec_len, data_len)
         }
-        17 => wire__crate__api__edit_session__EditSession_line_impl(ptr, rust_vec_len, data_len),
-        18 => {
+        18 => wire__crate__api__edit_session__EditSession_line_impl(ptr, rust_vec_len, data_len),
+        19 => {
             wire__crate__api__edit_session__EditSession_line_count_impl(ptr, rust_vec_len, data_len)
         }
-        19 => wire__crate__api__edit_session__EditSession_open_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__edit_session__EditSession_path_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__edit_session__EditSession_redo_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__edit_session__EditSession_refresh_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__edit_session__EditSession_replace_all_impl(
+        20 => wire__crate__api__edit_session__EditSession_open_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__edit_session__EditSession_path_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__edit_session__EditSession_redo_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__edit_session__EditSession_refresh_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__edit_session__EditSession_replace_all_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        24 => wire__crate__api__edit_session__EditSession_save_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__edit_session__EditSession_save_as_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__edit_session__EditSession_selection_char_count_impl(
+        25 => wire__crate__api__edit_session__EditSession_save_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__edit_session__EditSession_save_as_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__edit_session__EditSession_selection_char_count_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        27 => wire__crate__api__edit_session__EditSession_set_coalesce_undo_impl(
+        28 => wire__crate__api__edit_session__EditSession_set_coalesce_undo_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        28 => wire__crate__api__edit_session__EditSession_undo_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_line_offsets_impl(
+        29 => wire__crate__api__edit_session__EditSession_undo_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_line_offsets_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_path_impl(
+        31 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_path_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_size_impl(
+        32 => wire__crate__api__file_manager__FileBuffer_auto_accessor_get_size_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        32 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_line_offsets_impl(
+        33 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_line_offsets_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_path_impl(
+        34 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_path_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_size_impl(
+        35 => wire__crate__api__file_manager__FileBuffer_auto_accessor_set_size_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__api__file_manager__FileBuffer_get_line_count_impl(
+        36 => wire__crate__api__file_manager__FileBuffer_get_line_count_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__file_manager__FileBuffer_open_impl(ptr, rust_vec_len, data_len),
-        37 => {
+        37 => wire__crate__api__file_manager__FileBuffer_open_impl(ptr, rust_vec_len, data_len),
+        38 => {
             wire__crate__api__file_manager__FileBuffer_read_line_impl(ptr, rust_vec_len, data_len)
         }
-        38 => wire__crate__api__file_manager__FileBuffer_read_line_chunk_impl(
+        39 => wire__crate__api__file_manager__FileBuffer_read_line_chunk_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__file_manager__FileBuffer_refresh_impl(ptr, rust_vec_len, data_len),
-        40 => {
+        40 => wire__crate__api__file_manager__FileBuffer_refresh_impl(ptr, rust_vec_len, data_len),
+        41 => {
             wire__crate__api__file_manager__FileBuffer_save_edits_impl(ptr, rust_vec_len, data_len)
         }
-        41 => wire__crate__api__file_manager__FileBuffer_save_edits_as_impl(
+        42 => wire__crate__api__file_manager__FileBuffer_save_edits_as_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        42 => {
+        43 => {
             wire__crate__api__hex_session__HexSession_begin_group_impl(ptr, rust_vec_len, data_len)
         }
-        43 => wire__crate__api__hex_session__HexSession_break_coalescing_impl(
+        44 => wire__crate__api__hex_session__HexSession_break_coalescing_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => wire__crate__api__hex_session__HexSession_can_redo_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__hex_session__HexSession_can_undo_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__hex_session__HexSession_delete_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__hex_session__HexSession_end_group_impl(ptr, rust_vec_len, data_len),
-        48 => {
+        45 => wire__crate__api__hex_session__HexSession_can_redo_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__hex_session__HexSession_can_undo_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__hex_session__HexSession_delete_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__hex_session__HexSession_end_group_impl(ptr, rust_vec_len, data_len),
+        49 => {
             wire__crate__api__hex_session__HexSession_insert_bytes_impl(ptr, rust_vec_len, data_len)
         }
-        49 => wire__crate__api__hex_session__HexSession_is_dirty_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__hex_session__HexSession_len_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__hex_session__HexSession_modified_ranges_impl(
+        50 => wire__crate__api__hex_session__HexSession_is_dirty_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__hex_session__HexSession_len_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__hex_session__HexSession_modified_ranges_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__hex_session__HexSession_open_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__hex_session__HexSession_overwrite_bytes_impl(
+        53 => wire__crate__api__hex_session__HexSession_open_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__hex_session__HexSession_overwrite_bytes_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__hex_session__HexSession_path_impl(ptr, rust_vec_len, data_len),
-        55 => {
+        55 => wire__crate__api__hex_session__HexSession_path_impl(ptr, rust_vec_len, data_len),
+        56 => {
             wire__crate__api__hex_session__HexSession_read_window_impl(ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__hex_session__HexSession_redo_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__hex_session__HexSession_save_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__hex_session__HexSession_save_as_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__hex_session__HexSession_set_coalesce_undo_impl(
+        57 => wire__crate__api__hex_session__HexSession_redo_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__hex_session__HexSession_save_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__hex_session__HexSession_save_as_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__hex_session__HexSession_set_coalesce_undo_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__hex_session__HexSession_undo_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__paths__app_data_dir_impl(ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__edit_ops__apply_edit_op_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__mime_tools__base64_decode_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__mime_tools__base64_encode_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__file_manager__base_name_impl(ptr, rust_vec_len, data_len),
-        68 => {
+        61 => wire__crate__api__hex_session__HexSession_undo_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__paths__app_data_dir_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__edit_ops__apply_edit_op_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__mime_tools__base64_decode_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__mime_tools__base64_encode_impl(ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__file_manager__base_name_impl(ptr, rust_vec_len, data_len),
+        69 => {
             wire__crate__api__commands__command_registry_get_all_impl(ptr, rust_vec_len, data_len)
         }
-        70 => wire__crate__api__commands__command_registry_search_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__commands__command_registry_search_impl(ptr, rust_vec_len, data_len),
         73 => {
             wire__crate__api__file_manager__copy_text_to_clipboard_impl(ptr, rust_vec_len, data_len)
         }
         74 => wire__crate__api__jwt__decode_jwt_impl(ptr, rust_vec_len, data_len),
         75 => wire__crate__api__jwt__encode_jwt_impl(ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__commands__get_command_registry_impl(ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__hex_session__is_binary_file_impl(ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__mime_tools__qp_decode_impl(ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__mime_tools__qp_encode_impl(ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__mime_tools__saml_decode_impl(ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__paths__scratch_dir_impl(ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__mime_tools__url_decode_impl(ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__mime_tools__url_encode_impl(ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__search__validate_query_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__commands__get_command_registry_impl(ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__hex_session__is_binary_file_impl(ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__mime_tools__qp_decode_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__mime_tools__qp_encode_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__mime_tools__saml_decode_impl(ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__paths__scratch_dir_impl(ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__mime_tools__url_decode_impl(ptr, rust_vec_len, data_len),
+        100 => wire__crate__api__mime_tools__url_encode_impl(ptr, rust_vec_len, data_len),
+        101 => wire__crate__api__search__validate_query_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5263,21 +5227,6 @@ impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<
 
 impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<HexSession>> for HexSession {
     fn into_into_dart(self) -> FrbWrapper<HexSession> {
-        self.into()
-    }
-}
-
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<Regex> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
-            .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<Regex> {}
-
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<Regex>> for Regex {
-    fn into_into_dart(self) -> FrbWrapper<Regex> {
         self.into()
     }
 }
@@ -5469,6 +5418,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::file_manager::LineEdit>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::search::MatchSpan {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.start_row.into_into_dart().into_dart(),
+            self.start_col.into_into_dart().into_dart(),
+            self.end_row.into_into_dart().into_dart(),
+            self.end_col.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::search::MatchSpan {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::search::MatchSpan>
+    for crate::api::search::MatchSpan
+{
+    fn into_into_dart(self) -> crate::api::search::MatchSpan {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::search::SearchMode {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -5572,29 +5541,8 @@ impl SseEncode for HexSession {
     }
 }
 
-impl SseEncode for Regex {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>>::sse_encode(
-            flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self),
-            serializer,
-        );
-    }
-}
-
 impl SseEncode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>>
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        let (ptr, size) = self.sse_encode_raw();
-        <usize>::sse_encode(ptr, serializer);
-        <i32>::sse_encode(size, serializer);
-    }
-}
-
-impl SseEncode
-    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5629,15 +5577,6 @@ impl SseEncode
 impl SseEncode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>>
 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        let (ptr, size) = self.sse_encode_raw();
-        <usize>::sse_encode(ptr, serializer);
-        <i32>::sse_encode(size, serializer);
-    }
-}
-
-impl SseEncode for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         let (ptr, size) = self.sse_encode_raw();
@@ -5819,6 +5758,16 @@ impl SseEncode for Vec<crate::api::file_manager::LineEdit> {
     }
 }
 
+impl SseEncode for Vec<crate::api::search::MatchSpan> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::search::MatchSpan>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5836,6 +5785,16 @@ impl SseEncode for Vec<usize> {
         for item in self {
             <usize>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::search::MatchSpan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <usize>::sse_encode(self.start_row, serializer);
+        <usize>::sse_encode(self.start_col, serializer);
+        <usize>::sse_encode(self.end_row, serializer);
+        <usize>::sse_encode(self.end_col, serializer);
     }
 }
 
@@ -5957,7 +5916,6 @@ mod io {
     use crate::api::edit_session::*;
     use crate::api::file_manager::*;
     use crate::api::hex_session::*;
-    use crate::api::search::*;
     use crate::api::store::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
@@ -5981,20 +5939,6 @@ mod io {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>>::decrement_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_textutilz_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCaptures(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>::increment_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_textutilz_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCaptures(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>::decrement_strong_count(ptr as _);
     }
 
     #[unsafe(no_mangle)]
@@ -6038,20 +5982,6 @@ mod io {
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>>::decrement_strong_count(ptr as _);
     }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_textutilz_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRegex(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>::increment_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_textutilz_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRegex(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>::decrement_strong_count(ptr as _);
-    }
 }
 #[cfg(not(target_family = "wasm"))]
 pub use io::*;
@@ -6068,7 +5998,6 @@ mod web {
     use crate::api::edit_session::*;
     use crate::api::file_manager::*;
     use crate::api::hex_session::*;
-    use crate::api::search::*;
     use crate::api::store::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
@@ -6094,20 +6023,6 @@ mod web {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>>::decrement_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCaptures(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>::increment_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCaptures(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>::decrement_strong_count(ptr as _);
     }
 
     #[wasm_bindgen]
@@ -6150,20 +6065,6 @@ mod web {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>>::decrement_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRegex(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>::increment_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRegex(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>::decrement_strong_count(ptr as _);
     }
 }
 #[cfg(target_family = "wasm")]

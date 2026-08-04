@@ -609,6 +609,83 @@ impl EditSession {
         self.reset_after_save();
         Ok(())
     }
+
+    /// Find every match whose start row is in `[from_row, to_row)`.
+    ///
+    /// The scan itself reaches `SEARCH_WINDOW_OVERLAP_ROWS` rows past
+    /// `to_row` so a multi-line match straddling the boundary is still found,
+    /// but such a match is only returned by the window its *start* falls in.
+    /// Consecutive windows therefore tile exactly, with no duplicates.
+    pub fn find_in_rows(
+        &self,
+        query: crate::api::search::SearchQuery,
+        from_row: usize,
+        to_row: usize,
+    ) -> anyhow::Result<Vec<crate::api::search::MatchSpan>> {
+        use crate::api::search::{compile, MatchSpan, SEARCH_WINDOW_OVERLAP_ROWS};
+
+        let total = self.line_count();
+        let from = from_row.min(total);
+        let to = to_row.min(total);
+        if from >= to {
+            return Ok(Vec::new());
+        }
+        let scan_to = (to + SEARCH_WINDOW_OVERLAP_ROWS).min(total);
+
+        let re = compile(&query)?;
+
+        // Join the scanned rows, remembering each row's byte offset in the
+        // joined string so byte positions map back to (row, utf16 col).
+        let mut text = String::new();
+        let mut row_starts: Vec<usize> = Vec::with_capacity(scan_to - from);
+        for row in from..scan_to {
+            row_starts.push(text.len());
+            text.push_str(&self.get_line_visual(row));
+            if row + 1 < scan_to {
+                text.push('\n');
+            }
+        }
+
+        // Byte offset in `text` -> (absolute row, UTF-16 column).
+        let locate = |byte: usize| -> (usize, usize) {
+            // The last row whose start is <= byte.
+            let idx = match row_starts.binary_search(&byte) {
+                Ok(i) => i,
+                Err(i) => i.saturating_sub(1),
+            };
+            let line = self.get_line_visual(from + idx);
+            let within = byte - row_starts[idx];
+            (from + idx, u16_len(&line[..within.min(line.len())]))
+        };
+
+        let mut out = Vec::new();
+        let mut at = 0usize;
+        while at <= text.len() {
+            let Some(m) = re.find_at(&text, at) else { break };
+            let (srow, scol) = locate(m.start());
+            if srow >= to {
+                break;
+            }
+            let (erow, ecol) = locate(m.end());
+            out.push(MatchSpan {
+                start_row: srow,
+                start_col: scol,
+                end_row: erow,
+                end_col: ecol,
+            });
+            // A zero-length match must advance, or this loops forever.
+            at = if m.end() > m.start() {
+                m.end()
+            } else {
+                let mut next = m.end() + 1;
+                while next < text.len() && !text.is_char_boundary(next) {
+                    next += 1;
+                }
+                next
+            };
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -875,5 +952,133 @@ mod tests {
         let (mut s, _p) = session("");
         s.replace_all("hello world".to_string());
         assert_eq!(doc(&s), "hello world");
+    }
+
+    use crate::api::search::{SearchMode, SearchQuery, SEARCH_WINDOW_OVERLAP_ROWS};
+
+    fn query(pattern: &str) -> SearchQuery {
+        SearchQuery {
+            pattern: pattern.to_string(),
+            mode: SearchMode::Normal,
+            match_case: true,
+            whole_word: false,
+            dot_matches_newline: false,
+        }
+    }
+
+    fn regex_query(pattern: &str, dot_nl: bool) -> SearchQuery {
+        SearchQuery {
+            pattern: pattern.to_string(),
+            mode: SearchMode::Regex,
+            match_case: true,
+            whole_word: false,
+            dot_matches_newline: dot_nl,
+        }
+    }
+
+    #[test]
+    fn find_matches_at_document_start() {
+        let (s, _p) = session("needle here\nother\n");
+        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].start_row, m[0].start_col), (0, 0));
+        assert_eq!((m[0].end_row, m[0].end_col), (0, 6));
+    }
+
+    #[test]
+    fn find_matches_at_document_end() {
+        let (s, _p) = session("alpha\nbeta needle");
+        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].start_row, m[0].start_col), (1, 5));
+        assert_eq!((m[0].end_row, m[0].end_col), (1, 11));
+    }
+
+    #[test]
+    fn find_returns_matches_in_order() {
+        let (s, _p) = session("x\nax\nbx\n");
+        let m = s.find_in_rows(query("x"), 0, 10).unwrap();
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[0].start_row, 0);
+        assert_eq!(m[1].start_row, 1);
+        assert_eq!(m[2].start_row, 2);
+    }
+
+    #[test]
+    fn find_uses_utf16_columns() {
+        // "😀" is 2 UTF-16 code units, so the match starts at column 2.
+        let (s, _p) = session("😀needle\n");
+        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        assert_eq!(m[0].start_col, 2);
+    }
+
+    #[test]
+    fn find_matches_multiline_pattern_inside_window() {
+        let (s, _p) = session("alpha\nbeta\ngamma\n");
+        let m = s.find_in_rows(regex_query("alpha.beta", true), 0, 10).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].start_row, m[0].start_col), (0, 0));
+        assert_eq!((m[0].end_row, m[0].end_col), (1, 4));
+    }
+
+    #[test]
+    fn find_matches_multiline_pattern_straddling_window_boundary() {
+        // 20 rows; a two-row match starts on row 9 and ends on row 10, while
+        // the window ends at row 10. The overlap must catch it.
+        let mut content = String::new();
+        for i in 0..20 {
+            content.push_str(&format!("row{}\n", i));
+        }
+        let (s, _p) = session(&content);
+        let m = s.find_in_rows(regex_query("row9.row10", true), 0, 10).unwrap();
+        assert_eq!(m.len(), 1, "overlap should catch the straddling match");
+        assert_eq!(m[0].start_row, 9);
+        assert_eq!(m[0].end_row, 10);
+    }
+
+    #[test]
+    fn find_excludes_matches_starting_at_or_after_to_row() {
+        // Consecutive windows must tile exactly, with no duplicates.
+        let (s, _p) = session("hit\nhit\nhit\nhit\n");
+        let first = s.find_in_rows(query("hit"), 0, 2).unwrap();
+        let second = s.find_in_rows(query("hit"), 2, 4).unwrap();
+        assert_eq!(first.len(), 2);
+        assert_eq!(second.len(), 2);
+        assert_eq!(first[0].start_row, 0);
+        assert_eq!(second[0].start_row, 2);
+    }
+
+    #[test]
+    fn find_clamps_range_beyond_document() {
+        let (s, _p) = session("only\n");
+        let m = s.find_in_rows(query("only"), 0, 100_000).unwrap();
+        assert_eq!(m.len(), 1);
+        let none = s.find_in_rows(query("only"), 50, 100).unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn find_with_inverted_range_returns_empty() {
+        let (s, _p) = session("hit\n");
+        assert!(s.find_in_rows(query("hit"), 5, 2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn find_terminates_on_zero_length_match() {
+        let (s, _p) = session("ab\n");
+        // `x*` matches empty at every position; must advance, not loop.
+        let m = s.find_in_rows(regex_query("x*", false), 0, 10).unwrap();
+        assert!(m.len() < 100, "zero-length matches must advance");
+    }
+
+    #[test]
+    fn find_reports_error_for_invalid_regex() {
+        let (s, _p) = session("anything\n");
+        assert!(s.find_in_rows(regex_query("a(", false), 0, 10).is_err());
+    }
+
+    #[test]
+    fn overlap_constant_is_used() {
+        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64);
     }
 }

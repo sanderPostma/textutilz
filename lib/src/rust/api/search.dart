@@ -6,41 +6,48 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MatchSpan`, `SpanScope`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SpanScope`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `compile`, `expand_replacement`
 
 /// Expand `\n \r \t \0 \\ \xHH \uXXXX`. An unrecognized escape is an error
 /// rather than a silent literal, so a typo surfaces in the panel.
 Future<String> unescapeExtended({required String s}) =>
     RustLib.instance.api.crateApiSearchUnescapeExtended(s: s);
 
-/// Lower any search mode to a single regex. This is the one place a mode is
-/// interpreted; every caller goes through it.
-Future<Regex> compile({required SearchQuery query}) =>
-    RustLib.instance.api.crateApiSearchCompile(query: query);
-
-/// Build the replacement text for one match. Capture references are honored
-/// only in Regex mode; Normal mode keeps `$1` literal, as Notepad++ does.
-Future<String> expandReplacement({
-  required SearchMode mode,
-  required Captures caps,
-  required String template,
-}) => RustLib.instance.api.crateApiSearchExpandReplacement(
-  mode: mode,
-  caps: caps,
-  template: template,
-);
-
 /// Cheap validity check for the panel to call on every keystroke. Returns the
 /// error message when the query cannot compile, or None when it is usable.
 String? validateQuery({required SearchQuery query}) =>
     RustLib.instance.api.crateApiSearchValidateQuery(query: query);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Captures>>
-abstract class Captures implements RustOpaqueInterface {}
+/// A match, in the editor's coordinate system. Columns are UTF-16 code units.
+class MatchSpan {
+  final BigInt startRow;
+  final BigInt startCol;
+  final BigInt endRow;
+  final BigInt endCol;
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Regex>>
-abstract class Regex implements RustOpaqueInterface {}
+  const MatchSpan({
+    required this.startRow,
+    required this.startCol,
+    required this.endRow,
+    required this.endCol,
+  });
+
+  @override
+  int get hashCode =>
+      startRow.hashCode ^ startCol.hashCode ^ endRow.hashCode ^ endCol.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MatchSpan &&
+          runtimeType == other.runtimeType &&
+          startRow == other.startRow &&
+          startCol == other.startCol &&
+          endRow == other.endRow &&
+          endCol == other.endCol;
+}
 
 /// How a search pattern is interpreted. Mirrors Notepad++'s Search Mode.
 enum SearchMode {
