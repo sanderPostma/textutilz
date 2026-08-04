@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'search.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `span_in_scope`, `u16_len`, `u16_to_byte`
+// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `span_in_scope`, `u16_len`, `u16_to_byte`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `UndoEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
@@ -94,6 +94,23 @@ abstract class EditSession implements RustOpaqueInterface {
   /// step (delete-all + insert). Used by transforms like the MIME tools that
   /// rewrite the whole buffer. Returns the caret past the inserted text.
   CaretPos replaceAll({required String text});
+
+  /// Replace every match (optionally limited to `scope`) as ONE undo step.
+  /// Matches are collected first, then applied back-to-front so earlier
+  /// spans stay valid as later ones change length. Returns the count.
+  Future<BigInt> replaceAllInRows({
+    required SearchQuery query,
+    required String replacement,
+    SpanScope? scope,
+  });
+
+  /// Replace one match. `query` is needed so capture references in
+  /// `replacement` can be expanded against that match. One undo step.
+  Future<CaretPos> replaceSpan({
+    required SearchQuery query,
+    required MatchSpan span,
+    required String replacement,
+  });
 
   void save();
 

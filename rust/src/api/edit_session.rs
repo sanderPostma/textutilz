@@ -729,6 +729,110 @@ impl EditSession {
         }
         Ok(count)
     }
+
+    /// Replace one match. `query` is needed so capture references in
+    /// `replacement` can be expanded against that match. One undo step.
+    pub fn replace_span(
+        &mut self,
+        query: crate::api::search::SearchQuery,
+        span: crate::api::search::MatchSpan,
+        replacement: String,
+    ) -> anyhow::Result<CaretPos> {
+        let text = self.expand_for_span(&query, &span, &replacement)?;
+        self.begin_group();
+        self.delete(span.start_row, span.start_col, span.end_row, span.end_col);
+        let caret = self.insert(span.start_row, span.start_col, text);
+        self.end_group();
+        Ok(caret)
+    }
+
+    /// Replace every match (optionally limited to `scope`) as ONE undo step.
+    /// Matches are collected first, then applied back-to-front so earlier
+    /// spans stay valid as later ones change length. Returns the count.
+    pub fn replace_all_in_rows(
+        &mut self,
+        query: crate::api::search::SearchQuery,
+        replacement: String,
+        scope: Option<crate::api::search::SpanScope>,
+    ) -> anyhow::Result<usize> {
+        use crate::api::search::{SearchQuery, SEARCH_WINDOW_ROWS};
+
+        // Collect first: the document must not change while scanning.
+        let total = self.line_count();
+        let mut spans = Vec::new();
+        let mut row = 0usize;
+        while row < total {
+            let to = (row + SEARCH_WINDOW_ROWS).min(total);
+            let q = SearchQuery {
+                pattern: query.pattern.clone(),
+                mode: query.mode.clone(),
+                match_case: query.match_case,
+                whole_word: query.whole_word,
+                dot_matches_newline: query.dot_matches_newline,
+            };
+            for span in self.find_in_rows(q, row, to)? {
+                match &scope {
+                    Some(sc) if !span_in_scope(&span, sc) => continue,
+                    _ => spans.push(span),
+                }
+            }
+            row = to;
+        }
+        if spans.is_empty() {
+            return Ok(0);
+        }
+
+        // Expand replacements before mutating, for the same reason.
+        let mut texts = Vec::with_capacity(spans.len());
+        for span in &spans {
+            texts.push(self.expand_for_span(&query, span, &replacement)?);
+        }
+
+        let n = spans.len();
+        self.begin_group();
+        for i in (0..n).rev() {
+            let span = &spans[i];
+            self.delete(span.start_row, span.start_col, span.end_row, span.end_col);
+            self.insert(span.start_row, span.start_col, texts[i].clone());
+        }
+        self.end_group();
+        Ok(n)
+    }
+
+    /// Re-run the pattern against the matched text so capture groups are
+    /// available, then expand `replacement` against them.
+    fn expand_for_span(
+        &self,
+        query: &crate::api::search::SearchQuery,
+        span: &crate::api::search::MatchSpan,
+        replacement: &str,
+    ) -> anyhow::Result<String> {
+        use crate::api::search::{compile, expand_replacement};
+
+        let mut matched = String::new();
+        for row in span.start_row..=span.end_row {
+            let line = self.get_line_visual(row);
+            let start = if row == span.start_row {
+                u16_to_byte(&line, span.start_col)
+            } else {
+                0
+            };
+            let end = if row == span.end_row {
+                u16_to_byte(&line, span.end_col)
+            } else {
+                line.len()
+            };
+            matched.push_str(&line[start..end]);
+            if row < span.end_row {
+                matched.push('\n');
+            }
+        }
+        let re = compile(query)?;
+        let caps = re
+            .captures(&matched)
+            .ok_or_else(|| anyhow::anyhow!("match text no longer matches the pattern"))?;
+        expand_replacement(&query.mode, &caps, replacement)
+    }
 }
 
 #[cfg(test)]
@@ -1177,7 +1281,7 @@ mod tests {
         assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64);
     }
 
-    use crate::api::search::SpanScope;
+    use crate::api::search::{MatchSpan, SpanScope};
 
     #[test]
     fn count_matches_counts_whole_document() {
@@ -1238,5 +1342,136 @@ mod tests {
             end_col: 2,
         };
         assert_eq!(s.count_matches(query("hit"), Some(scope)).unwrap(), 0);
+    }
+
+    #[test]
+    fn replace_all_scope_includes_later_row_with_smaller_column() {
+        // scope starts at (1, 4). A match at (2, 0) has a numerically smaller
+        // column than scope.start_col, but row 2 > row 1, so lexicographic
+        // ordering (row, col) still includes it. A field-wise AND comparison
+        // would wrongly exclude it.
+        let (s, _p) = session("hit\nxxxx hit\nhit\n");
+        let scope = SpanScope {
+            start_row: 1,
+            start_col: 4,
+            end_row: 3,
+            end_col: 0,
+        };
+        // Matches: row0 col0 (excluded, before scope start), row1 col9
+        // (included), row2 col0 (included: (2,0) >= (1,4) lexicographically).
+        assert_eq!(s.count_matches(query("hit"), Some(scope)).unwrap(), 2);
+    }
+
+    #[test]
+    fn replace_span_replaces_one_match() {
+        let (mut s, _p) = session("hit hit\n");
+        let spans = s.find_in_rows(query("hit"), 0, 10).unwrap();
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        s.replace_span(query("hit"), first, "X".to_string()).unwrap();
+        // Trailing "\n" in the fixture makes the file end with a phantom
+        // empty line, same as every other doc() assertion in this file.
+        assert_eq!(doc(&s), "X hit\n");
+    }
+
+    #[test]
+    fn replace_span_undoes_as_one_step() {
+        let (mut s, _p) = session("hit hit\n");
+        let spans = s.find_in_rows(query("hit"), 0, 10).unwrap();
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        s.replace_span(query("hit"), first, "LONGER".to_string()).unwrap();
+        s.undo();
+        assert_eq!(doc(&s), "hit hit\n");
+    }
+
+    #[test]
+    fn replace_span_expands_captures_in_regex_mode() {
+        let (mut s, _p) = session("user@host\n");
+        let q = regex_query(r"(\w+)@(\w+)", false);
+        let spans = s.find_in_rows(regex_query(r"(\w+)@(\w+)", false), 0, 10).unwrap();
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        s.replace_span(q, first, "$2:$1".to_string()).unwrap();
+        assert_eq!(doc(&s), "host:user\n");
+    }
+
+    #[test]
+    fn replace_all_replaces_every_match() {
+        let (mut s, _p) = session("hit\nmiss\nhit\n");
+        let n = s.replace_all_in_rows(query("hit"), "X".to_string(), None).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(doc(&s), "X\nmiss\nX\n");
+    }
+
+    #[test]
+    fn replace_all_handles_longer_replacement() {
+        // A backwards pass keeps earlier spans valid as later ones grow.
+        let (mut s, _p) = session("a a a\n");
+        s.replace_all_in_rows(query("a"), "LONG".to_string(), None).unwrap();
+        assert_eq!(doc(&s), "LONG LONG LONG\n");
+    }
+
+    #[test]
+    fn replace_all_handles_shorter_replacement() {
+        let (mut s, _p) = session("aaa aaa\n");
+        s.replace_all_in_rows(query("aaa"), "b".to_string(), None).unwrap();
+        assert_eq!(doc(&s), "b b\n");
+    }
+
+    #[test]
+    fn replace_all_undoes_and_redoes_as_one_step() {
+        let (mut s, _p) = session("hit\nhit\nhit\n");
+        s.replace_all_in_rows(query("hit"), "X".to_string(), None).unwrap();
+        assert_eq!(doc(&s), "X\nX\nX\n");
+        s.undo();
+        assert_eq!(doc(&s), "hit\nhit\nhit\n", "one undo must revert all");
+        s.redo();
+        assert_eq!(doc(&s), "X\nX\nX\n", "one redo must reapply all");
+    }
+
+    #[test]
+    fn replace_all_respects_scope() {
+        let (mut s, _p) = session("hit\nhit\nhit\n");
+        let scope = SpanScope {
+            start_row: 1,
+            start_col: 0,
+            end_row: 2,
+            end_col: 3,
+        };
+        let n = s
+            .replace_all_in_rows(query("hit"), "X".to_string(), Some(scope))
+            .unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(doc(&s), "hit\nX\nX\n");
+    }
+
+    #[test]
+    fn replace_all_with_no_match_makes_no_undo_entry() {
+        let (mut s, _p) = session("alpha\n");
+        let n = s.replace_all_in_rows(query("zzz"), "X".to_string(), None).unwrap();
+        assert_eq!(n, 0);
+        assert!(!s.can_undo(), "a no-op replace must not push an undo step");
+    }
+
+    #[test]
+    fn replace_all_terminates_on_zero_length_match() {
+        let (mut s, _p) = session("ab\n");
+        let n = s
+            .replace_all_in_rows(regex_query("x*", false), "".to_string(), None)
+            .unwrap();
+        assert!(n < 100, "zero-length matches must not loop");
     }
 }

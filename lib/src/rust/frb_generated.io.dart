@@ -152,6 +152,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CommandRegistry dco_decode_box_autoadd_command_registry(dynamic raw);
 
   @protected
+  MatchSpan dco_decode_box_autoadd_match_span(dynamic raw);
+
+  @protected
   SearchQuery dco_decode_box_autoadd_search_query(dynamic raw);
 
   @protected
@@ -368,6 +371,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CommandRegistry sse_decode_box_autoadd_command_registry(
     SseDeserializer deserializer,
   );
+
+  @protected
+  MatchSpan sse_decode_box_autoadd_match_span(SseDeserializer deserializer);
 
   @protected
   SearchQuery sse_decode_box_autoadd_search_query(SseDeserializer deserializer);
@@ -610,6 +616,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_command_registry(
     CommandRegistry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_match_span(
+    MatchSpan self,
     SseSerializer serializer,
   );
 
