@@ -90,6 +90,10 @@ abstract class EditSession implements RustOpaqueInterface {
     required BigInt c2,
   });
 
+  /// Set whether consecutive single-character typing coalesces into one undo
+  /// step (true) or each keystroke is its own step (false).
+  void setCoalesceUndo({required bool on_});
+
   CaretPos? undo();
 }
 

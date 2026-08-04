@@ -204,6 +204,26 @@ impl FileBuffer {
     }
 }
 
+/// Copy arbitrary text to the system clipboard. Keeps clipboard access on the
+/// Rust side (used by "Copy file name" / "Copy file path").
+#[flutter_rust_bridge::frb(sync)]
+pub fn copy_text_to_clipboard(text: String) -> anyhow::Result<()> {
+    let mut ctx = arboard::Clipboard::new()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize clipboard: {}", e))?;
+    ctx.set_text(text)
+        .map_err(|e| anyhow::anyhow!("Failed to set clipboard text: {}", e))?;
+    Ok(())
+}
+
+/// The final path component (file name with extension), e.g. `/a/b/c.txt` -> `c.txt`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn base_name(path: String) -> String {
+    match std::path::Path::new(&path).file_name() {
+        Some(s) => s.to_string_lossy().into_owned(),
+        None => path.clone(),
+    }
+}
+
 pub async fn pick_file() -> Option<String> {
     rfd::AsyncFileDialog::new()
         .pick_file()

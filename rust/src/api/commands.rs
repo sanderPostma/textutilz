@@ -67,6 +67,68 @@ impl CommandRegistry {
             action_id: Some("file.close".to_string()),
         });
 
+        // Current-tab commands (operate on the active tab).
+        self.commands.push(CommandDescriptor {
+            id: "file.saveas".to_string(),
+            title: "Save as".to_string(),
+            category: "File".to_string(),
+            icon: Some("save_as".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("file.saveas".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "tab.closeothers".to_string(),
+            title: "Close other tabs".to_string(),
+            category: "File".to_string(),
+            icon: Some("clear_all".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tab.closeothers".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "tab.closeright".to_string(),
+            title: "Close tabs to the right".to_string(),
+            category: "File".to_string(),
+            icon: Some("keyboard_tab".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tab.closeright".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "tab.copyname".to_string(),
+            title: "Copy file name".to_string(),
+            category: "File".to_string(),
+            icon: Some("drive_file_rename_outline".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tab.copyname".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "tab.copypath".to_string(),
+            title: "Copy file path".to_string(),
+            category: "File".to_string(),
+            icon: Some("folder_copy".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: None,
+            action_id: Some("tab.copypath".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "tab.autodelete".to_string(),
+            title: "Auto-delete".to_string(),
+            category: "File".to_string(),
+            icon: Some("auto_delete".to_string()),
+            shortcut: None,
+            toggled: None,
+            panel_id: Some("autodelete".to_string()),
+            action_id: None,
+        });
+
         // Edit commands
         self.commands.push(CommandDescriptor {
             id: "edit.undo".to_string(),

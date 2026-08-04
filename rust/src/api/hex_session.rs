@@ -32,23 +32,28 @@ struct Piece {
     len: usize,
 }
 
-/// A primitive splice: at `offset`, remove `del_len` bytes and insert `ins`.
-/// Both the forward and the inverse of an edit are expressed as an `Op`.
-#[derive(Clone)]
-struct Op {
+/// A piece-level edit: at `offset`, the pieces in `old` were replaced by the
+/// pieces in `new`. Undo swaps `new` back to `old`; redo swaps `old` to `new`.
+///
+/// Storing the exact pieces (not raw bytes) is deliberate: undoing an overwrite
+/// restores the original *base* piece, so a reverted byte is no longer flagged
+/// as modified by [`HexSession::modified_ranges`] (an Add piece would be).
+struct Edit {
     offset: usize,
-    del_len: usize,
-    ins: Vec<u8>,
+    old: Vec<Piece>,
+    new: Vec<Piece>,
+    /// Caret after applying `new`.
+    end_offset: usize,
 }
 
-/// One undo step: one or more primitives applied in order. Undo replays their
-/// inverses in reverse; redo replays the forwards in order. Mirrors
-/// `EditSession`'s `UndoEntry`, with the caret collapsed to a byte offset.
+/// One undo step: one or more edits applied in order (e.g. the two nibble
+/// writes of a single hex byte, grouped). Undo reverses them; redo replays them.
 struct UndoEntry {
-    prims: Vec<(Op /*forward*/, Op /*inverse*/)>,
-    /// Caret after the last forward primitive — used to detect contiguous typing.
+    prims: Vec<Edit>,
+    /// Caret after the last edit.
     end_offset: usize,
-    /// True only for a lone single-byte edit that may absorb the next one.
+    /// True only for a lone single-byte edit that may absorb the next one (used
+    /// when coalescing is enabled).
     coalescable: bool,
 }
 
@@ -74,7 +79,10 @@ pub struct HexSession {
     redo: Vec<UndoEntry>,
     /// While Some, edits append to this group instead of the undo stack.
     group: Option<UndoEntry>,
-    dirty: bool,
+    /// When true, consecutive single-byte edits (e.g. typing in the character
+    /// panel) merge into one undo step. When false, every edit is its own step.
+    /// Shared app setting; matches EditSession so all editors behave alike.
+    coalesce: bool,
 }
 
 impl HexSession {
@@ -104,8 +112,15 @@ impl HexSession {
             undo: Vec::new(),
             redo: Vec::new(),
             group: None,
-            dirty: false,
+            coalesce: true,
         }
+    }
+
+    /// Set whether consecutive single-byte edits coalesce into one undo step
+    /// (true) or each edit is its own step (false).
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn set_coalesce_undo(&mut self, on: bool) {
+        self.coalesce = on;
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -122,7 +137,9 @@ impl HexSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        // The empty undo stack is the saved/loaded checkpoint (bytes equal the
+        // file on disk), so undoing all the way back clears the dirty flag.
+        !self.undo.is_empty()
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -248,19 +265,12 @@ impl HexSession {
         a.source == b.source && a.start + a.len == b.start
     }
 
-    /// Core splice: remove `del_len` bytes at `offset` and insert `ins`.
-    /// Returns `(caret, removed)` where `caret` is `offset + ins.len()` and
-    /// `removed` is the bytes deleted (for the inverse op). `del_len` is clamped
-    /// to the bytes available from `offset`.
-    fn apply_splice(
-        &mut self,
-        offset: usize,
-        del_len: usize,
-        ins: &[u8],
-    ) -> anyhow::Result<(usize, Vec<u8>)> {
+    /// Core splice: remove `del_len` bytes at `offset` and insert `ins`. Returns
+    /// an [`Edit`] describing the piece-level change (the exact pieces removed
+    /// and inserted) for undo/redo. `del_len` is clamped to the bytes available.
+    fn apply_splice(&mut self, offset: usize, del_len: usize, ins: &[u8]) -> Edit {
         let offset = offset.min(self.total_len);
         let del_len = del_len.min(self.total_len - offset);
-        let removed = self.read_window(offset, del_len)?;
 
         let add_start = self.added.len();
         if !ins.is_empty() {
@@ -269,57 +279,88 @@ impl HexSession {
 
         let i = self.split_at(offset);
         let j = self.split_at(offset + del_len);
-        self.pieces.drain(i..j);
+        let old: Vec<Piece> = self.pieces.drain(i..j).collect();
+        let mut new: Vec<Piece> = Vec::new();
         if !ins.is_empty() {
-            self.pieces.insert(
-                i,
-                Piece {
-                    source: Source::Add,
-                    start: add_start,
-                    len: ins.len(),
-                },
-            );
+            let p = Piece {
+                source: Source::Add,
+                start: add_start,
+                len: ins.len(),
+            };
+            self.pieces.insert(i, p);
+            new.push(p);
         }
-        if i < self.pieces.len() {
+        self.total_len = self.total_len - del_len + ins.len();        if i < self.pieces.len() {
             self.merge_around(i);
         } else if i > 0 {
             self.merge_around(i - 1);
         }
-
-        self.total_len = self.total_len - del_len + ins.len();
-        self.dirty = true;
-        Ok((offset + ins.len(), removed))
+        Edit {
+            offset,
+            old,
+            new,
+            end_offset: offset + ins.len(),
+        }
     }
 
-    /// Apply a primitive without recording undo; return the resulting caret.
-    fn apply_op(&mut self, op: &Op) -> usize {
-        let (caret, _removed) = self
-            .apply_splice(op.offset, op.del_len, &op.ins)
-            .unwrap_or((op.offset, Vec::new()));
-        caret
+    fn piece_len(list: &[Piece]) -> usize {
+        list.iter().map(|p| p.len).sum()
+    }
+
+    /// At `offset`, remove `remove_len` bytes and splice in `insert` verbatim.
+    /// Used by undo/redo to restore exact pieces.
+    fn swap(&mut self, offset: usize, remove_len: usize, insert: &[Piece]) {
+        let i = self.split_at(offset);
+        let j = self.split_at(offset + remove_len);
+        self.pieces.drain(i..j);
+        for (k, p) in insert.iter().enumerate() {
+            self.pieces.insert(i + k, *p);
+        }
+        let insert_len = Self::piece_len(insert);
+        self.total_len = self.total_len - remove_len + insert_len;        if i < self.pieces.len() {
+            self.merge_around(i);
+        }
+        let end = i + insert.len();
+        if end > 0 && end <= self.pieces.len() {
+            self.merge_around(end - 1);
+        }
+    }
+
+    /// Reverse `edit`: remove its `new` pieces, restore its `old` pieces.
+    fn undo_edit(&mut self, e: &Edit) -> usize {
+        self.swap(e.offset, Self::piece_len(&e.new), &e.old);
+        e.offset + Self::piece_len(&e.old)
+    }
+
+    /// Re-apply `edit`: remove its `old` pieces, restore its `new` pieces.
+    fn redo_edit(&mut self, e: &Edit) -> usize {
+        self.swap(e.offset, Self::piece_len(&e.old), &e.new);
+        e.end_offset
     }
 
     // ---- undo recording -----------------------------------------------------
 
-    fn record(&mut self, forward: Op, inverse: Op, start: usize, end: usize, coalescable: bool) {
+    fn record(&mut self, edit: Edit, coalescable: bool) {
         self.redo.clear();
+        let end = edit.end_offset;
+        let start = edit.offset;
         if let Some(group) = &mut self.group {
-            group.prims.push((forward, inverse));
+            group.prims.push(edit);
             group.end_offset = end;
             group.coalescable = false;
             return;
         }
-        if coalescable {
+        if coalescable && self.coalesce {
             if let Some(top) = self.undo.last_mut() {
                 if top.coalescable && top.end_offset == start {
-                    top.prims.push((forward, inverse));
+                    top.prims.push(edit);
                     top.end_offset = end;
                     return;
                 }
             }
         }
         self.undo.push(UndoEntry {
-            prims: vec![(forward, inverse)],
+            prims: vec![edit],
             end_offset: end,
             coalescable,
         });
@@ -332,20 +373,10 @@ impl HexSession {
     /// offset just past the written bytes.
     #[flutter_rust_bridge::frb(sync)]
     pub fn overwrite_bytes(&mut self, offset: usize, bytes: Vec<u8>) -> anyhow::Result<usize> {
-        let del = bytes.len();
-        let (caret, removed) = self.apply_splice(offset, del, &bytes)?;
         let coalescable = bytes.len() == 1;
-        let forward = Op {
-            offset,
-            del_len: del,
-            ins: bytes.clone(),
-        };
-        let inverse = Op {
-            offset,
-            del_len: bytes.len(),
-            ins: removed,
-        };
-        self.record(forward, inverse, offset, caret, coalescable);
+        let edit = self.apply_splice(offset, bytes.len(), &bytes);
+        let caret = edit.end_offset;
+        self.record(edit, coalescable);
         Ok(caret)
     }
 
@@ -353,19 +384,10 @@ impl HexSession {
     /// offset just past the inserted bytes.
     #[flutter_rust_bridge::frb(sync)]
     pub fn insert_bytes(&mut self, offset: usize, bytes: Vec<u8>) -> anyhow::Result<usize> {
-        let (caret, _removed) = self.apply_splice(offset, 0, &bytes)?;
         let coalescable = bytes.len() == 1;
-        let forward = Op {
-            offset,
-            del_len: 0,
-            ins: bytes.clone(),
-        };
-        let inverse = Op {
-            offset,
-            del_len: bytes.len(),
-            ins: Vec::new(),
-        };
-        self.record(forward, inverse, offset, caret, coalescable);
+        let edit = self.apply_splice(offset, 0, &bytes);
+        let caret = edit.end_offset;
+        self.record(edit, coalescable);
         Ok(caret)
     }
 
@@ -373,20 +395,10 @@ impl HexSession {
     /// stays at `offset`.
     #[flutter_rust_bridge::frb(sync)]
     pub fn delete(&mut self, offset: usize, len: usize) -> anyhow::Result<usize> {
-        let (_caret, removed) = self.apply_splice(offset, len, &[])?;
-        let removed_len = removed.len();
-        let forward = Op {
-            offset,
-            del_len: removed_len,
-            ins: Vec::new(),
-        };
-        let inverse = Op {
-            offset,
-            del_len: 0,
-            ins: removed,
-        };
-        self.record(forward, inverse, offset, offset, false);
-        Ok(offset.min(self.total_len))
+        let edit = self.apply_splice(offset, len, &[]);
+        let caret = edit.offset;
+        self.record(edit, false);
+        Ok(caret)
     }
 
     /// Break typing coalescing (call on caret moves, clicks, focus changes) so
@@ -398,7 +410,8 @@ impl HexSession {
         }
     }
 
-    /// Begin grouping subsequent mutations into a single undo step.
+    /// Begin grouping subsequent mutations into a single undo step (e.g. the two
+    /// nibble writes that make up one hex byte).
     #[flutter_rust_bridge::frb(sync)]
     pub fn begin_group(&mut self) {
         if self.group.is_none() {
@@ -425,24 +438,20 @@ impl HexSession {
     pub fn undo(&mut self) -> Option<usize> {
         let entry = self.undo.pop()?;
         let mut caret = entry.end_offset;
-        for (_forward, inverse) in entry.prims.iter().rev() {
-            caret = self.apply_op(inverse);
+        for e in entry.prims.iter().rev() {
+            caret = self.undo_edit(e);
         }
-        self.redo.push(entry);
-        self.dirty = true;
-        Some(caret)
+        self.redo.push(entry);        Some(caret)
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn redo(&mut self) -> Option<usize> {
         let entry = self.redo.pop()?;
         let mut caret = entry.end_offset;
-        for (forward, _inverse) in entry.prims.iter() {
-            caret = self.apply_op(forward);
+        for e in entry.prims.iter() {
+            caret = self.redo_edit(e);
         }
-        self.undo.push(entry);
-        self.dirty = true;
-        Some(caret)
+        self.undo.push(entry);        Some(caret)
     }
 
     // ---- saving -------------------------------------------------------------
@@ -463,9 +472,7 @@ impl HexSession {
         self.total_len = self.base.size;
         self.undo.clear();
         self.redo.clear();
-        self.group = None;
-        self.dirty = false;
-    }
+        self.group = None;    }
 
     fn save_impl(&mut self, new_path: Option<String>) -> anyhow::Result<()> {
         use std::io::{BufWriter, Seek, SeekFrom, Write};
@@ -672,16 +679,66 @@ mod tests {
     }
 
     #[test]
-    fn single_byte_typing_coalesces() {
+    fn per_char_undo_when_coalescing_off() {
         let (mut s, _p) = session(b"");
+        s.set_coalesce_undo(false);
+        let mut c = 0usize;
+        for b in [b'a', b'b', b'c'] {
+            c = s.insert_bytes(c, vec![b]).unwrap();
+        }
+        assert_eq!(all(&s), b"abc");
+        // Each keystroke undoes one at a time.
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"ab");
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"a");
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"");
+        assert!(!s.can_undo());
+    }
+
+    #[test]
+    fn coalesced_typing_undoes_as_one_step_when_on() {
+        let (mut s, _p) = session(b"");
+        s.set_coalesce_undo(true); // also the default
         let mut c = 0usize;
         for b in [b'a', b'b', b'c'] {
             c = s.insert_bytes(c, vec![b]).unwrap();
         }
         assert_eq!(all(&s), b"abc");
         s.undo().unwrap();
-        assert_eq!(all(&s), b""); // whole coalesced run
+        assert_eq!(all(&s), b""); // whole coalesced run at once
         assert!(!s.can_undo());
+    }
+
+    #[test]
+    fn undo_releases_modified_flag() {
+        // Overwriting a base byte flags it modified; undo restores the base
+        // piece, so it is no longer reported as modified (highlight releases).
+        let (mut s, _p) = session(b"0123456789");
+        s.overwrite_bytes(2, vec![b'A']).unwrap();
+        assert_eq!(s.modified_ranges(0, s.len()).len(), 1);
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"0123456789");
+        assert!(s.modified_ranges(0, s.len()).is_empty());
+        // Redo re-flags it.
+        s.redo().unwrap();
+        assert_eq!(s.modified_ranges(0, s.len()).len(), 1);
+    }
+
+    #[test]
+    fn grouped_byte_edit_undoes_as_one_step() {
+        // Two nibble writes wrapped in a group (how the hex panel types a byte)
+        // undo together, and the highlight releases.
+        let (mut s, _p) = session(b"0123456789");
+        s.begin_group();
+        s.overwrite_bytes(2, vec![0xA0]).unwrap(); // high nibble
+        s.overwrite_bytes(2, vec![0xAB]).unwrap(); // low nibble
+        s.end_group();
+        assert_eq!(s.read_window(2, 1).unwrap(), vec![0xAB]);
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"0123456789");
+        assert!(s.modified_ranges(0, s.len()).is_empty());
     }
 
     #[test]
@@ -726,6 +783,18 @@ mod tests {
         let r = s.modified_ranges(0, s.len());
         assert_eq!(r.len(), 1);
         assert_eq!((r[0].start, r[0].len), (2, 2));
+    }
+
+    #[test]
+    fn undo_to_checkpoint_clears_dirty() {
+        let (mut s, _p) = session(b"hello");
+        assert!(!s.is_dirty());
+        s.overwrite_bytes(0, vec![b'H']).unwrap();
+        assert!(s.is_dirty());
+        s.undo().unwrap();
+        assert!(!s.is_dirty()); // back at the loaded checkpoint
+        s.redo().unwrap();
+        assert!(s.is_dirty());
     }
 
     #[test]

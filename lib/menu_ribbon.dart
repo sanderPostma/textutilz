@@ -22,6 +22,10 @@ class MenuEntry {
   /// [shortcut] in the trailing slot.
   final bool? toggled;
 
+  /// When true, this entry is a non-interactive sub-header dividing groups of
+  /// items within a single column (e.g. "Current tab" under File).
+  final bool isHeader;
+
   const MenuEntry({
     required this.label,
     required this.icon,
@@ -29,7 +33,17 @@ class MenuEntry {
     this.command,
     this.shortcut,
     this.toggled,
+    this.isHeader = false,
   });
+
+  /// A sub-header row grouping the items that follow it within a column.
+  const MenuEntry.header(this.label)
+      : icon = Icons.remove,
+        onPressed = null,
+        command = null,
+        shortcut = null,
+        toggled = null,
+        isHeader = true;
 }
 
 /// A menu column: an accent-colored header above a vertical stack of entries.
@@ -102,6 +116,18 @@ class MenuRibbon extends StatefulWidget {
   /// Invoked when the current tab should switch to the hex editor view.
   final VoidCallback? onEnterHex;
 
+  // Current-tab actions (null disables the entry).
+  final VoidCallback? onSaveAs;
+  final VoidCallback? onCloseOtherTabs;
+  final VoidCallback? onCloseTabsToRight;
+  final VoidCallback? onCopyFileName;
+  final VoidCallback? onCopyFilePath;
+
+  /// The active tab's current auto-delete policy (for the Auto-delete panel's
+  /// selected radio), and the setter invoked when the user picks one.
+  final AutoDelete? currentAutoDelete;
+  final ValueChanged<AutoDelete>? onSetAutoDelete;
+
   const MenuRibbon({
     super.key,
     this.onOpen,
@@ -128,6 +154,13 @@ class MenuRibbon extends StatefulWidget {
     this.onSearchChanged,
     this.onEnterToolMode,
     this.onEnterHex,
+    this.onSaveAs,
+    this.onCloseOtherTabs,
+    this.onCloseTabsToRight,
+    this.onCopyFileName,
+    this.onCopyFilePath,
+    this.currentAutoDelete,
+    this.onSetAutoDelete,
   });
 
   @override
@@ -236,6 +269,12 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'space_bar': return Icons.space_bar;
       case 'comment': return Icons.comment;
       case 'memory': return Icons.memory;
+      case 'save_as': return Icons.save_as;
+      case 'clear_all': return Icons.clear_all;
+      case 'keyboard_tab': return Icons.keyboard_tab;
+      case 'drive_file_rename_outline': return Icons.drive_file_rename_outline;
+      case 'folder_copy': return Icons.folder_copy;
+      case 'auto_delete': return Icons.auto_delete;
       default: return Icons.extension;
     }
   }
@@ -254,6 +293,11 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'view.wordwrap': return widget.onToggleWordWrap;
       case 'tools.jwt': return widget.onEnterToolMode != null ? () => widget.onEnterToolMode!('jwt.decode') : null;
       case 'tools.hex': return widget.onEnterHex;
+      case 'file.saveas': return widget.onSaveAs;
+      case 'tab.closeothers': return widget.onCloseOtherTabs;
+      case 'tab.closeright': return widget.onCloseTabsToRight;
+      case 'tab.copyname': return widget.onCopyFileName;
+      case 'tab.copypath': return widget.onCopyFilePath;
       default: return null;
     }
   }
@@ -313,8 +357,15 @@ class _MenuRibbonState extends State<MenuRibbon> {
           entries: [
             entry('file.new'),
             entry('file.open'),
+            const MenuEntry.header('Current tab'),
             entry('file.save'),
+            entry('file.saveas'),
             entry('file.close'),
+            entry('tab.closeothers'),
+            entry('tab.closeright'),
+            entry('tab.copyname'),
+            entry('tab.copypath'),
+            entry('tab.autodelete'),
           ],
         ),
         MenuColumn(
@@ -444,6 +495,17 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'edit.eol': return _buildEditPanel(EditCategory.eolConv, 'EOL Conversion', scheme);
       case 'edit.blank': return _buildEditPanel(EditCategory.blankOps, 'Blank Operations', scheme);
       case 'edit.comment': return _buildEditPanel(EditCategory.commentOps, 'Comment/Uncomment', scheme);
+      case 'autodelete':
+        return RibbonPanelScaffold(
+          key: const ValueKey('panel-autodelete'),
+          title: 'Auto-delete',
+          onBack: _closePanel,
+          scheme: scheme,
+          child: AutoDeletePanel(
+            current: widget.currentAutoDelete,
+            onChanged: widget.onSetAutoDelete,
+          ),
+        );
       default:
         return null;
     }
@@ -666,7 +728,12 @@ class _MenuColumnCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 for (final entry in column.entries)
-                  _MenuEntryTile(entry: entry, accent: column.accent, scheme: scheme),
+                  if (entry.isHeader)
+                    _MenuSubHeader(
+                        label: entry.label, accent: column.accent, scheme: scheme)
+                  else
+                    _MenuEntryTile(
+                        entry: entry, accent: column.accent, scheme: scheme),
               ],
             ),
           ),
@@ -703,7 +770,7 @@ class _MenuEntryTile extends StatelessWidget {
           onTap: entry.onPressed,
           hoverColor: accent.withOpacity(0.12),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Row(
               children: [
                 Icon(entry.icon, size: 16, color: enabled ? accent : fg),
@@ -751,6 +818,48 @@ class _MenuEntryTile extends StatelessWidget {
   }
 }
 
+/// A sub-header dividing groups of items within a single column. A thin rule
+/// plus a dimmed accent label (e.g. "Current tab" under the File column).
+class _MenuSubHeader extends StatelessWidget {
+  final String label;
+  final Color accent;
+  final ColorScheme scheme;
+
+  const _MenuSubHeader({
+    required this.label,
+    required this.accent,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Divider(height: 1, thickness: 1, color: accent.withOpacity(0.2)),
+          Padding(
+            padding: const EdgeInsets.only(left: 6, top: 6, bottom: 2),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: accent.withOpacity(0.75),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Generic full-width ribbon panel: a back button + title header above an
 /// arbitrary child. Reused by every menu item that swaps out the ribbon.
 class RibbonPanelScaffold extends StatelessWidget {
@@ -790,6 +899,49 @@ class RibbonPanelScaffold extends StatelessWidget {
         const SizedBox(height: 8),
         child,
       ],
+    );
+  }
+}
+
+/// Auto-delete policy picker for the active tab, shown inside a
+/// [RibbonPanelScaffold]. Applies immediately on selection (like the edit
+/// tool panels). Disabled when there is no active tab ([onChanged] is null).
+class AutoDeletePanel extends StatelessWidget {
+  final AutoDelete? current;
+  final ValueChanged<AutoDelete>? onChanged;
+
+  const AutoDeletePanel({super.key, required this.current, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onChanged != null;
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Delete this document automatically:',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            for (final option in AutoDelete.values)
+              RadioListTile<AutoDelete>(
+                value: option,
+                groupValue: current ?? AutoDelete.off,
+                onChanged: enabled ? (v) => onChanged!(v ?? AutoDelete.off) : null,
+                title: Text(option.label, style: const TextStyle(fontSize: 13)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

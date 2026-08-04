@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_op`, `apply_splice`, `contiguous`, `from_file_buffer`, `merge_around`, `record`, `reset_after_save`, `save_impl`, `sniff_binary`, `split_at`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `Piece`, `Source`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`
+// These functions are ignored because they are not marked as `pub`: `apply_splice`, `contiguous`, `from_file_buffer`, `merge_around`, `piece_len`, `record`, `redo_edit`, `reset_after_save`, `save_impl`, `sniff_binary`, `split_at`, `swap`, `undo_edit`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Edit`, `Piece`, `Source`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`
 
 /// Sniff the first ~8 KB of `path` and report whether it looks binary. Drives
 /// the "open binary files in hex mode" behavior on the Dart side.
@@ -17,7 +17,8 @@ bool isBinaryFile({required String path}) =>
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HexSession>>
 abstract class HexSession implements RustOpaqueInterface {
-  /// Begin grouping subsequent mutations into a single undo step.
+  /// Begin grouping subsequent mutations into a single undo step (e.g. the two
+  /// nibble writes that make up one hex byte).
   void beginGroup();
 
   /// Break typing coalescing (call on caret moves, clicks, focus changes) so
@@ -70,6 +71,10 @@ abstract class HexSession implements RustOpaqueInterface {
   void save();
 
   void saveAs({required String newPath});
+
+  /// Set whether consecutive single-byte edits coalesce into one undo step
+  /// (true) or each edit is its own step (false).
+  void setCoalesceUndo({required bool on_});
 
   BigInt? undo();
 }

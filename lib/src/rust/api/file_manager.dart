@@ -8,6 +8,15 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `read_bytes`, `save_edits_impl`, `scan_file`
 
+/// Copy arbitrary text to the system clipboard. Keeps clipboard access on the
+/// Rust side (used by "Copy file name" / "Copy file path").
+void copyTextToClipboard({required String text}) =>
+    RustLib.instance.api.crateApiFileManagerCopyTextToClipboard(text: text);
+
+/// The final path component (file name with extension), e.g. `/a/b/c.txt` -> `c.txt`.
+String baseName({required String path}) =>
+    RustLib.instance.api.crateApiFileManagerBaseName(path: path);
+
 Future<String?> pickFile() =>
     RustLib.instance.api.crateApiFileManagerPickFile();
 

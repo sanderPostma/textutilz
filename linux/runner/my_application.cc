@@ -52,7 +52,11 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "textutilz");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  // Match the size window_manager applies from Dart (WindowOptions in main()).
+  // A mismatch here makes GTK create the window at one size and window_manager
+  // immediately resize it to another, which races the OpenGL surface and can
+  // segfault the embedder ("Timed out waiting for OpenGL frame ...").
+  gtk_window_set_default_size(window, 800, 600);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

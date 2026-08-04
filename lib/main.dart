@@ -17,6 +17,7 @@ import 'edit_tools_panel.dart';
 import 'document_state.dart';
 import 'jwt_tools_panel.dart';
 import 'hex_editor_view.dart';
+import 'editor_settings.dart';
 import 'package:textutilz/src/rust/api/edit_ops.dart' as rust_edit_ops;
 
 
@@ -41,6 +42,9 @@ Future<void> main() async {
     appStore = store;
     final theme = store.getSetting(key: 'theme_mode');
     themeNotifier.value = theme == 'light' ? ThemeMode.light : ThemeMode.dark;
+    // Shared editor preference: undo coalescing (per-keystroke by default).
+    undoCoalescingNotifier.value =
+        store.getSetting(key: kUndoCoalescingSetting) == 'true';
   } catch (e) {
     debugPrint('store open failed: $e');
   }
@@ -137,6 +141,21 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     }
     _scheduleMidnightCleanup();
     _tailTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) => _pollTailFiles());
+    // Shared editor settings: when toggled (e.g. by a future config panel),
+    // apply to every open editor and persist. Works for all editors alike.
+    undoCoalescingNotifier.addListener(_onUndoCoalescingChanged);
+  }
+
+  /// Propagate the undo-coalescing preference to all open sessions and persist.
+  void _onUndoCoalescingChanged() {
+    for (final t in _tabs) {
+      applyUndoSettingToText(t.session);
+      final h = t.hexSessionOrNull;
+      if (h != null) applyUndoSettingToHex(h);
+    }
+    _store?.setSetting(
+        key: kUndoCoalescingSetting,
+        value: undoCoalescingNotifier.value ? 'true' : 'false');
   }
 
   void _restoreSession(AppStore store) {
@@ -153,6 +172,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
           if (!File(r.path).existsSync()) continue; // real file gone — skip
           session = EditSession.open(path: r.path);
         }
+        applyUndoSettingToText(session);
         DocumentMeta.reserveId(r.id);
         _tabs.add(TabRuntime(meta: DocumentMeta.fromRecord(r), session: session));
       } catch (e) {
@@ -263,6 +283,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     _midnightTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     windowManager.removeListener(this);
+    undoCoalescingNotifier.removeListener(_onUndoCoalescingChanged);
     _focusNode.dispose();
     super.dispose();
   }
@@ -380,6 +401,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       }
       try {
         final session = EditSession.open(path: path);
+        applyUndoSettingToText(session);
         String name = path.split('/').last;
         // Binary files open straight into the hex editor; text files start in
         // Read mode. Either can be toggled per tab afterwards.
@@ -413,6 +435,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       final path = '$_scratchDir/${req.name}.$ext';
       // Fresh empty scratch file (Rust owns the file IO).
       final session = EditSession.createScratch(path: path, content: '');
+      applyUndoSettingToText(session);
       setState(() {
         _tabs.add(TabRuntime(
           meta: DocumentMeta(
@@ -440,6 +463,99 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   }
 
   void _closeActiveTab() => _closeTabAt(_activeTabIndex);
+
+  /// Save the active tab under a newly chosen path (always prompts). Rebinds the
+  /// tab to the new path and clears its transient flag.
+  Future<void> _saveFileAs() async {
+    final tab = _activeTab;
+    if (tab == null) return;
+    final suggested = tab.meta.path.split('/').last;
+    final newPath = await pickSaveFile(defaultName: suggested);
+    if (newPath == null) return; // cancelled
+    final oldPath = tab.meta.path;
+    final wasTransient = tab.meta.isTransient;
+    if (tab.mode == ViewMode.hex) {
+      tab.hexSession.saveAs(newPath: newPath);
+    } else {
+      tab.session.saveAs(newPath: newPath);
+    }
+    final base = newPath.split('/').last;
+    final dot = base.lastIndexOf('.');
+    if (!mounted) return;
+    setState(() {
+      tab.meta.path = newPath;
+      tab.meta.displayName = base;
+      tab.meta.isTransient = false;
+      if (dot > 0) tab.meta.extension = base.substring(dot + 1);
+      _isRibbonVisible = false;
+    });
+    // A transient scratch file left behind under the old path is now orphaned.
+    if (wasTransient && oldPath != newPath) {
+      try {
+        final f = File(oldPath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+    _persistSession();
+  }
+
+  /// Close every tab except the active one.
+  Future<void> _closeOtherTabs() async {
+    final keep = _activeTab;
+    if (keep == null) return;
+    for (final t in _tabs.where((t) => t != keep).toList()) {
+      final idx = _tabs.indexOf(t);
+      if (idx >= 0) await _closeTabAt(idx);
+    }
+    if (!mounted) return;
+    setState(() {
+      _activeTabIndex = _tabs.indexOf(keep).clamp(0, _tabs.length - 1);
+      _isRibbonVisible = false;
+    });
+    _persistSession();
+  }
+
+  /// Close all tabs positioned to the right of the active one.
+  Future<void> _closeTabsToRight() async {
+    final keep = _activeTab;
+    if (keep == null) return;
+    final keepIdx = _tabs.indexOf(keep);
+    if (keepIdx < 0) return;
+    for (final t in _tabs.sublist(keepIdx + 1).toList()) {
+      final idx = _tabs.indexOf(t);
+      if (idx >= 0) await _closeTabAt(idx);
+    }
+    if (!mounted) return;
+    setState(() {
+      _activeTabIndex = _tabs.indexOf(keep).clamp(0, _tabs.length - 1);
+      _isRibbonVisible = false;
+    });
+    _persistSession();
+  }
+
+  /// Copy the active tab's file name (basename) to the clipboard (Rust-side).
+  void _copyFileName() {
+    final tab = _activeTab;
+    if (tab == null) return;
+    copyTextToClipboard(text: baseName(path: tab.meta.path));
+    setState(() => _isRibbonVisible = false);
+  }
+
+  /// Copy the active tab's full file path to the clipboard (Rust-side).
+  void _copyFilePath() {
+    final tab = _activeTab;
+    if (tab == null) return;
+    copyTextToClipboard(text: tab.meta.path);
+    setState(() => _isRibbonVisible = false);
+  }
+
+  /// Set the active tab's auto-delete policy (from the Auto-delete panel).
+  void _setAutoDelete(AutoDelete policy) {
+    final tab = _activeTab;
+    if (tab == null) return;
+    setState(() => tab.meta.autoDelete = policy);
+    _persistSession();
+  }
 
   /// Close the tab at [index], confirming first if it has unsaved editor
   /// changes. Auto-delete tabs cannot save, so their dialog offers only
@@ -1133,6 +1249,16 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           _persistSession();
                         }
                       },
+                      onSaveAs: _activeTab != null ? _saveFileAs : null,
+                      onCloseOtherTabs: _tabs.length > 1 ? _closeOtherTabs : null,
+                      onCloseTabsToRight:
+                          (_activeTab != null && _activeTabIndex < _tabs.length - 1)
+                              ? _closeTabsToRight
+                              : null,
+                      onCopyFileName: _activeTab != null ? _copyFileName : null,
+                      onCopyFilePath: _activeTab != null ? _copyFilePath : null,
+                      currentAutoDelete: _activeTab?.meta.autoDelete,
+                      onSetAutoDelete: _activeTab != null ? _setAutoDelete : null,
                       onCloseTab: _activeTab != null ? _closeActiveTab : null,
                     ),
                   ),

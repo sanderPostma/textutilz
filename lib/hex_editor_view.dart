@@ -688,7 +688,8 @@ class _HexEditorViewState extends State<HexEditorView> {
                               gutterBg: scheme.surfaceContainerHighest,
                               gutterFg: scheme.onSurface.withOpacity(0.55),
                               caretColor: scheme.primary,
-                              modifiedBg: scheme.tertiary.withOpacity(0.28),
+                              modifiedBg: const Color(0xFFFFF9BD),
+                              modifiedFg: const Color(0xFF222222),
                               dimColor: scheme.onSurface.withOpacity(0.3),
                             ),
                           ),
@@ -820,6 +821,7 @@ class _HexPainter extends CustomPainter {
   final Color gutterFg;
   final Color caretColor;
   final Color modifiedBg;
+  final Color modifiedFg;
   final Color dimColor;
 
   _HexPainter({
@@ -852,6 +854,7 @@ class _HexPainter extends CustomPainter {
     required this.gutterFg,
     required this.caretColor,
     required this.modifiedBg,
+    required this.modifiedFg,
     required this.dimColor,
   });
 
@@ -925,7 +928,7 @@ class _HexPainter extends CustomPainter {
         final cell = byteRadix == HexRadix.hex
             ? b.toRadixString(16).toUpperCase().padLeft(2, '0')
             : b.toString().padLeft(cellDigits, ' ');
-        _text(canvas, cell, cellX, y, textColor);
+        _text(canvas, cell, cellX, y, modifiedHere ? modifiedFg : textColor);
 
         // Character panel glyph.
         final gx = charStartX + k * charW;
@@ -934,7 +937,8 @@ class _HexPainter extends CustomPainter {
               Rect.fromLTWH(gx, y, charW, rowH), Paint()..color = modifiedBg);
         }
         final g = glyphs[off - winStart];
-        _text(canvas, g, gx, y, g == '·' ? dimColor : textColor);
+        _text(canvas, g, gx, y,
+            modifiedHere ? modifiedFg : (g == '·' ? dimColor : textColor));
 
         // Caret highlight (both panels).
         if (off == caret) {

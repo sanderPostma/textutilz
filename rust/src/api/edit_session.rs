@@ -51,7 +51,10 @@ pub struct EditSession {
     redo: Vec<UndoEntry>,
     /// While Some, insert/delete append to this group instead of the undo stack.
     group: Option<UndoEntry>,
-    dirty: bool,
+    /// When true, consecutive single-character typing merges into one undo step
+    /// (the classic word-at-a-time behavior). When false, every keystroke is its
+    /// own step. Shared app setting; applies to all editors alike.
+    coalesce: bool,
 }
 
 // ---- UTF-16 column helpers (match Dart's code-unit columns) ----------------
@@ -84,8 +87,15 @@ impl EditSession {
             undo: Vec::new(),
             redo: Vec::new(),
             group: None,
-            dirty: false,
+            coalesce: true,
         })
+    }
+
+    /// Set whether consecutive single-character typing coalesces into one undo
+    /// step (true) or each keystroke is its own step (false).
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn set_coalesce_undo(&mut self, on: bool) {
+        self.coalesce = on;
     }
 
     /// Create a scratch file at `path` containing `content` (creating parent
@@ -209,7 +219,9 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        // The empty undo stack is the saved/loaded checkpoint (content equals
+        // the file on disk), so undoing all the way back clears the dirty flag.
+        !self.undo.is_empty()
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -235,9 +247,7 @@ impl EditSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn refresh(&mut self) -> anyhow::Result<()> {
         self.base.refresh()?;
-        self.added_lines = 0;
-        self.dirty = false;
-        self.edited_rows.clear();
+        self.added_lines = 0;        self.edited_rows.clear();
         self.overlay.clear();
         self.undo.clear();
         self.redo.clear();
@@ -337,9 +347,7 @@ impl EditSession {
             vec.insert(insert_at, last);
             self.added_lines += (n - 1) as i64;
             end = CaretPos::new(vrow + (n - 1), last_col);
-        }
-        self.dirty = true;
-        end
+        }        end
     }
 
     /// Apply a delete over a normalized range; return the removed text and the
@@ -362,7 +370,6 @@ impl EditSession {
             let mut combined = line[..s].to_string();
             combined.push_str(&line[e..]);
             self.overlay.get_mut(&orow).unwrap()[sub] = combined;
-            self.dirty = true;
             return (removed, CaretPos::new(srow, scol));
         }
 
@@ -401,8 +408,6 @@ impl EditSession {
             self.overlay.get_mut(&orow).unwrap().remove(sub);
             self.added_lines -= 1;
         }
-
-        self.dirty = true;
         (removed, CaretPos::new(srow, scol))
     }
 
@@ -437,7 +442,7 @@ impl EditSession {
             group.coalescable = false;
             return;
         }
-        if coalescable {
+        if coalescable && self.coalesce {
             if let Some(top) = self.undo.last_mut() {
                 if top.coalescable && top.end_row == start.0 && top.end_col == start.1 {
                     top.prims.push((forward, inverse));
@@ -542,9 +547,7 @@ impl EditSession {
         for (_forward, inverse) in entry.prims.iter().rev() {
             caret = self.apply(inverse);
         }
-        self.redo.push(entry);
-        self.dirty = true;
-        Some(caret)
+        self.redo.push(entry);        Some(caret)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -554,9 +557,7 @@ impl EditSession {
         for (forward, _inverse) in entry.prims.iter() {
             caret = self.apply(forward);
         }
-        self.undo.push(entry);
-        self.dirty = true;
-        Some(caret)
+        self.undo.push(entry);        Some(caret)
     }
 
     /// Replace the entire document with `text`, recorded as a single undoable
@@ -591,9 +592,7 @@ impl EditSession {
         self.added_lines = 0;
         self.undo.clear();
         self.redo.clear();
-        self.group = None;
-        self.dirty = false;
-    }
+        self.group = None;    }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn save(&mut self) -> anyhow::Result<()> {
@@ -772,6 +771,18 @@ mod tests {
         s.insert(0, 1, "z".to_string());
         assert!(!s.can_redo());
         assert_eq!(s.line(0), "xz");
+    }
+
+    #[test]
+    fn undo_to_checkpoint_clears_dirty() {
+        let (mut s, _p) = session("hello");
+        assert!(!s.is_dirty());
+        s.insert(0, 5, "!".to_string());
+        assert!(s.is_dirty());
+        s.undo().unwrap();
+        assert!(!s.is_dirty()); // back at the loaded checkpoint
+        s.redo().unwrap();
+        assert!(s.is_dirty());
     }
 
     #[test]

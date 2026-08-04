@@ -3,6 +3,7 @@ import 'package:textutilz/src/rust/api/edit_session.dart';
 import 'package:textutilz/src/rust/api/hex_session.dart';
 import 'package:textutilz/src/rust/api/store.dart';
 import 'editor.dart';
+import 'editor_settings.dart';
 
 /// Days since the Unix epoch for *today's* local date. Used to decide whether an
 /// `atMidnight` document has crossed a midnight boundary. Stable for comparison
@@ -164,8 +165,16 @@ class TabRuntime {
   HexSession? _hexSession;
 
   /// The hex document for this tab, opening it over the same file on first use.
-  HexSession get hexSession =>
-      _hexSession ??= HexSession.open(path: meta.path);
+  /// Newly opened sessions inherit the shared editor settings.
+  HexSession get hexSession => _hexSession ??= () {
+        final s = HexSession.open(path: meta.path);
+        applyUndoSettingToHex(s);
+        return s;
+      }();
+
+  /// The hex session only if it has already been created (does not open one).
+  /// Used to propagate setting changes without forcing lazy creation.
+  HexSession? get hexSessionOrNull => _hexSession;
 
   TabRuntime({required this.meta, required this.session});
 
