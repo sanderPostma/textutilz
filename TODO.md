@@ -9,6 +9,34 @@ Detail for most of these lives in
 
 ---
 
+## 0. Docked tool bars — carried over from that build (2026-08-05)
+
+Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
+
+- **The spec's vertical budget is not met.** Measured at 800px: `edit.blank`
+  163px, `edit.case`/`edit.comment` 129px, MIME bars 86px, one-row floor 71px
+  — against a promised ~52px one-row / ~84px two-row. These are upper bounds
+  (the widget-test font is fixed-width at ~1em/glyph; the real proportional
+  font should put `edit.blank` nearer 101–131px), but the target is still
+  missed. Two independent walls: the 71px floor is `DockedBar`'s own 40px
+  close `IconButton` plus the ~23px title tab, so reaching ~52px means
+  changing chrome the find bar shares; and `edit.blank`'s eight long labels
+  need ~4 wrap runs at 800px. `test/tool_bar_layout_test.dart` now pins all
+  11 bar heights with zero slack, so this cannot regress silently.
+- **The MIME title tab is stale on Encode/Decode** — tap Decode and the tab
+  still reads "Base64 Encode"; only the Apply label updates. `ToolBar`
+  holds a fixed title per panel id (`lib/tool_bar.dart:43-51`). Fixing it
+  means hoisting the decode flag out of `SingleMimeToolPanel`, which makes
+  that widget half-controlled and `ToolBar` stateful.
+- **Three behaviours have no automated test** — `_openToolBar`'s early
+  return, the ViewMode retarget, and the live selection marker. All need a
+  `_TextEditorState` harness that does not exist; they are manual checks.
+- **Manual GUI verification is owed**, same as §1 below: the spec's
+  9-point checklist, plus confirming the find bar is pixel-identical to
+  before it adopted `DockedBar`.
+
+---
+
 ## 1. Verify the find/replace panel in the running app
 
 **The entire feature was built headless. Nobody has ever looked at it.** Every
