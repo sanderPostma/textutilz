@@ -30,11 +30,15 @@ Future<void> main() async {
   await windowManager.ensureInitialized();
 
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(800, 600),
-    // The find/replace panel's controls stop fitting below ~800px, so the
-    // window refuses to go narrower rather than degrading into a scrolling
-    // toggle cluster. Height is left free.
-    minimumSize: Size(800, 400),
+    size: Size(1000, 600),
+    // The ribbon's menu columns stop fitting below ~980px, so the window
+    // refuses to go narrower rather than degrading. Height is left free.
+    //
+    // This alone does NOT hold: window_manager's Linux backend applies the
+    // minimum through gdk_window_set_geometry_hints, and GDK geometry hints
+    // are ignored under Wayland. The binding minimum is the size request in
+    // linux/runner/my_application.cc; keep the two in sync.
+    minimumSize: Size(980, 400),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,

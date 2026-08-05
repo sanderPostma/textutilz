@@ -56,7 +56,14 @@ static void my_application_activate(GApplication* application) {
   // A mismatch here makes GTK create the window at one size and window_manager
   // immediately resize it to another, which races the OpenGL surface and can
   // segfault the embedder ("Timed out waiting for OpenGL frame ...").
-  gtk_window_set_default_size(window, 800, 600);
+  gtk_window_set_default_size(window, 1000, 600);
+
+  // The enforced minimum. window_manager's minimumSize goes through
+  // gdk_window_set_geometry_hints, which Wayland compositors ignore, so the
+  // window could be dragged narrower than the ribbon's menu columns fit. A
+  // size request on the window itself is honoured on both X11 and Wayland.
+  // Keep in sync with WindowOptions.minimumSize in lib/main.dart.
+  gtk_widget_set_size_request(GTK_WIDGET(window), 980, 400);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

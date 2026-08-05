@@ -77,8 +77,11 @@ void main() {
   /// reviews, unnoticed. These ceilings are the missing guard.
   ///
   /// The numbers are MEASURED, not designed: each is the exact height the bar
-  /// renders at 800px (the app's enforced minimum window width AND its default
-  /// width) after the tap-target/density fix. Exact, with no slack, so that any
+  /// renders at 800px. That is now 180px BELOW the enforced minimum window
+  /// width (980px, raised because the ribbon's menu columns need it), which
+  /// only makes these stricter: a narrower viewport wraps more and renders
+  /// taller, so every ceiling here is a conservative bound on what ships.
+  /// Exact, with no slack, so that any
   /// regression in control density or label length fails immediately. If a
   /// deliberate design change moves one, re-measure and update it here with the
   /// new figure — do not just raise the number.
