@@ -1182,6 +1182,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             setState(() {
                               _activeTab!.mode = ViewMode.read;
                             });
+                            _retargetFind();
                             _persistSession();
                           },
                         ),
@@ -1569,6 +1570,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             _activeTab!.mode = ViewMode.hex;
                             _isRibbonVisible = false;
                           });
+                          // Leaving Edit mode has to drop the docked bars, or
+                          // they reappear when the tab returns to Edit.
+                          _retargetFind();
                           _persistSession();
                         }
                       },

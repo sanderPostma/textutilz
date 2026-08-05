@@ -222,8 +222,11 @@ class _MenuRibbonState extends State<MenuRibbon> {
 
   void _openCommandPanel(CommandDescriptor cmd) {
     final id = cmd.panelId;
-    if (id != null && ToolBar.handles(id) && widget.onOpenToolBar != null) {
-      widget.onOpenToolBar!(id);
+    if (id != null && ToolBar.handles(id)) {
+      // These panels no longer have an in-ribbon build path, so falling
+      // through without a host callback would render an empty panel with no
+      // way back. Better to do nothing.
+      widget.onOpenToolBar?.call(id);
       return;
     }
     setState(() => _activeCommand = cmd);
