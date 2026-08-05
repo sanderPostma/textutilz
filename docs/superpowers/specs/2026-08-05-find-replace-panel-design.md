@@ -310,3 +310,75 @@ the pathological case is a whole-document replace on a very large file.
 If it is picked up later, the two obvious directions are keeping `edited_rows`
 sorted by insertion rather than re-sorting, and replacing `get_logical`'s
 linear scan with a binary search or a prefix-sum index.
+
+### Painted matches can exceed counted matches for greedy multi-line regexes
+
+`find_in_rows` scans `[from_row, to_row + SEARCH_WINDOW_OVERLAP_ROWS)`, so a
+greedy dot-all pattern's match extent depends on how much text the caller asked
+for. `count_matches` pages in 4096-row windows while viewport highlighting pages
+in screen-sized ones, so the two can legitimately disagree: measured with `a.*b`
+over a 300-row document, `count_matches` reports 1 and 40-row viewport tiling
+reports 6.
+
+This is inherent to scanning a document in windows without a streaming regex
+engine, and it affects only greedy patterns that span rows. Scope filtering does
+NOT have this problem — the painted and counted sets agree for every non-greedy
+pattern, and for all patterns when no `.*` spans rows.
+
+The comment at `lib/find_state.dart` claiming the highlighted set can never
+disagree with the counted set is true for scope, not for greedy dot-all.
+
+### Scope clamping is not output-neutral
+
+`scope_row_bounds` clamps a scoped scan to the scope's rows. The code comment
+says this changes no output; that is wrong. For a greedy dot-all pattern the
+clamp can *add* a match, because the match extent depends on how much text was
+scanned — e.g. `a.*b` with a scope ending at row 4 and a later `b` at row 205
+returns 1 match scoped, but 0 if you scan unscoped and filter afterwards.
+
+The clamp can only add matches, never drop one: an in-scope match is always
+wholly inside `[scope_lo, scope_hi + overlap)`, and the `regex` crate has no
+lookaround. The added behaviour is the more useful "search within the selection"
+semantics. Verified against a ground-truth set across seven scope shapes and
+three access patterns.
+
+## Follow-ups (parked, none blocking)
+
+- **Burst stepping can wrap early.** With several `stepForward()` calls in
+  flight, a step whose window load joins another's may still see
+  `_currentIndex == _loaded.length - 1` and wrap to the first match while
+  unscanned windows remain. Only reachable by holding key-repeat across a window
+  boundary; sequential stepping is exact. Hardening: require
+  `_loadedTo >= _lineCount` before taking the wrap branch
+  (`lib/find_state.dart`).
+- **`dispose()` does not invalidate `_generation`,** so a `_loadForward` loop
+  already in flight keeps paging the whole document after the panel closes. No
+  crash — `_notify()` guards the disposed case — just wasted work on a large
+  file.
+- **Two concurrent sweeps are possible** (`refresh`'s unawaited `_startSweep`
+  plus `recount`'s awaited one). Harmless and pre-existing.
+- **No automated coverage for `_openFind`, `_retargetFind`, or the paged-branch
+  prefetch.** The first two live in `_MyHomePageState`, which no test harness
+  drives; the third has no observable output. These rest on code reading and the
+  manual checklist.
+- **GUI behaviour has never been run.** The whole feature was built headless.
+  See the manual checklist below.
+
+## Manual verification (never run — headless build)
+
+1. Ctrl+F opens the panel docked above the editor; it pushes the editor down and
+   covers no text.
+2. Typing highlights every visible match, current one accented.
+3. ▲/▼ and F3/Shift+F3 step and scroll to matches; Esc closes and returns focus.
+4. Esc then Ctrl+F again re-shows results for the retained query (not
+   "No results").
+5. Choosing Replace from the menu while Find is open keeps the typed query.
+6. Replace walks forward; one Ctrl+Z reverts an entire Replace All.
+7. Select text, Ctrl+F: "In selection" is enabled; with it on, highlights,
+   counter and Replace All all agree.
+8. Edit the document with the panel open: highlights follow the edit, and the
+   caret is not stolen mid-word.
+9. Scroll far down a large file: matches highlight in regions never stepped to.
+10. Narrow the window: the panel degrades without an overflow stripe; query
+    field, arrows and close stay usable.
+11. Highlight colours are legible against the selection layer in both themes.
