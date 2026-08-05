@@ -106,7 +106,9 @@ void main() {
     'mime.qp.encode': 86,
     'mime.qp.decode': 86,
     'mime.url.encode': 118,
-    'mime.url.decode': 118,
+    // Decode hides the RFC1738/Extended/Full selector, so this is shorter
+    // than url.encode. It was pinned at 118 with 32px of slack it never used.
+    'mime.url.decode': 86,
     'mime.saml.decode': 88,
     // The tabbed bar: a tab row plus the selected category's option run.
     'mime': 119,

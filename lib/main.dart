@@ -1293,7 +1293,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                   children: [
                     if (_tabs.isNotEmpty)
                       Container(
-                        height: 36,
+                        height: 28,
                         color: tabBarColor,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
@@ -1308,7 +1308,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                                 _persistSession();
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
                                 decoration: BoxDecoration(
                                   color: isActive ? activeTabColor : Colors.transparent,
                                   border: isActive ? Border(bottom: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)) : null,
@@ -1322,20 +1322,25 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                                       Tooltip(
                                         message: 'Auto-delete: ${tab.meta.autoDelete.label}',
                                         child: Icon(Icons.delete_outline,
-                                            size: 14,
+                                            size: 12,
                                             color: Theme.of(context).colorScheme.error.withOpacity(0.8)),
                                       ),
                                       const SizedBox(width: 4),
                                     ],
-                                    Text(tab.name, style: TextStyle(fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                                    Text(tab.name,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: isActive
+                                                ? FontWeight.bold
+                                                : FontWeight.normal)),
                                     if (tab.isDirty) ...[
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.circle, size: 8, color: Colors.blueAccent),
+                                      const Icon(Icons.circle, size: 7, color: Colors.blueAccent),
                                     ],
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 6),
                                     InkWell(
                                       onTap: () => _closeTabAt(index),
-                                      child: const Icon(Icons.close, size: 16),
+                                      child: const Icon(Icons.close, size: 14),
                                     ),
                                   ],
                                 ),

@@ -104,4 +104,47 @@ void main() {
         reason: 'the close button must stay with the first row, not drift to the '
             'centre of a taller child');
   });
+
+  /// The title band spans the bar's full width and takes its colours from the
+  /// active ColorScheme, so it tracks both themes without either being
+  /// special-cased. A hardcoded colour would look right in one theme and
+  /// unreadable in the other, which no other test here would notice.
+  Widget themedHost(Brightness brightness, Widget bar) => MaterialApp(
+        theme: ThemeData(useMaterial3: true, brightness: brightness),
+        home: Scaffold(body: Column(children: [bar])),
+      );
+
+  for (final brightness in Brightness.values) {
+    testWidgets('title band uses scheme colours and full width in $brightness',
+        (tester) async {
+      tester.view.physicalSize = const Size(900, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(themedHost(
+          brightness,
+          DockedBar(
+            title: 'MIME tools',
+            onClose: () {},
+            child: const Text('content'),
+          )));
+
+      final context = tester.element(find.text('MIME tools'));
+      final scheme = Theme.of(context).colorScheme;
+
+      final band = tester.widget<Container>(find
+          .ancestor(of: find.text('MIME tools'), matching: find.byType(Container))
+          .first);
+      expect(band.color, scheme.secondaryContainer,
+          reason: 'the band must follow the theme, not a fixed colour');
+
+      final label = tester.widget<Text>(find.text('MIME tools'));
+      expect(label.style?.color, scheme.onSecondaryContainer,
+          reason: 'label colour must be the scheme pairing for the band');
+      expect(label.style?.color, isNot(scheme.onSurfaceVariant),
+          reason: 'the label is meant to read differently from body text');
+
+      expect(tester.getSize(find.byWidget(band)).width, 900,
+          reason: 'the band spans the full bar width');
+    });
+  }
 }
