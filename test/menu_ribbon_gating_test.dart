@@ -67,40 +67,32 @@ void main() {
     expect(opened, ['edit.blank']);
   });
 
-  /// The Tools column lists the seven MIME operations individually. It used to
-  /// carry a single aggregate 'MIME tools' entry opening the old ribbon panel,
-  /// which meant the docked bars shipped unreachable from the menu: search was
-  /// their only route, and every user who went through the menu got the panel
-  /// this feature set out to replace. These two tests are that bug's guard.
-  testWidgets('menu-table MIME entry opens a bar when mime is enabled',
+  /// The menu's MIME entry must open the docked BAR, not the old in-ribbon
+  /// panel. It shipped once pointing at the ribbon panel, so the docked MIME
+  /// bar was unreachable from the menu entirely — search was its only route.
+  testWidgets('menu MIME entry opens the tabbed bar when mime is enabled',
       (tester) async {
     final opened = <String>[];
     await pumpWide(
         tester,
         host(editEnabled: true, mimeEnabled: true, onOpen: opened.add));
-    await tester.tap(find.text('Base64 Encode'));
+    await tester.tap(find.text('MIME tools'));
     await tester.pumpAndSettle();
-    expect(opened, ['mime.base64.encode']);
+    expect(opened, ['mime']);
+    // The bar is the host's job to render, so the ribbon must not have
+    // opened a panel of its own instead.
+    expect(find.text('Base64'), findsNothing);
   });
 
-  testWidgets('the aggregate MIME tools entry is gone from the menu',
+  testWidgets('menu MIME entry does not open a bar when mime is disabled',
       (tester) async {
+    final opened = <String>[];
     await pumpWide(
         tester,
-        host(editEnabled: true, mimeEnabled: true, onOpen: (_) {}));
-    expect(find.text('MIME tools'), findsNothing);
-    // All seven operations are individually reachable.
-    for (final label in const [
-      'Base64 Encode',
-      'Base64 Decode',
-      'Quoted-printable Encode',
-      'Quoted-printable Decode',
-      'URL Encode',
-      'URL Decode',
-      'SAML Decode',
-    ]) {
-      expect(find.text(label), findsOneWidget, reason: '$label missing');
-    }
+        host(editEnabled: true, mimeEnabled: false, onOpen: opened.add));
+    await tester.tap(find.text('MIME tools'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(opened, isEmpty);
   });
 
   Future<void> search(WidgetTester tester, String query) async {

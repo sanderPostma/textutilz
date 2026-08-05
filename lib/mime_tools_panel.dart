@@ -80,6 +80,301 @@ class MimeOp {
 }
 
 
+/// Material's default 48px tap target makes each wrap run 48px tall on its
+/// own, well over the docked bar's height budget (see the ceilings in
+/// test/tool_bar_layout_test.dart). shrinkWrap + compact density brings a run
+/// to ~32px while keeping the controls comfortably clickable.
+final ButtonStyle _denseFilledStyle = FilledButton.styleFrom(
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.compact,
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+  minimumSize: Size.zero,
+);
+
+const ButtonStyle _denseSegmented = ButtonStyle(
+  visualDensity: VisualDensity.compact,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  padding: WidgetStatePropertyAll(
+    EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+  ),
+  textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
+);
+
+/// A checkbox styled to sit inline in a bar's wrap run.
+Widget _mimeCheck(String label, bool value, ValueChanged<bool> onChanged) {
+  return InkWell(
+    borderRadius: BorderRadius.circular(6),
+    onTap: () => onChanged(!value),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Checkbox(
+              value: value,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) => onChanged(v ?? false),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Encode | Decode segmented control, shared by the categories that have both.
+Widget _mimeModeSelector(bool decode, ValueChanged<bool> onChanged) {
+  return SegmentedButton<bool>(
+    segments: const [
+      ButtonSegment(
+          value: false,
+          label: Text('Encode'),
+          icon: Icon(Icons.lock_outline, size: 16)),
+      ButtonSegment(
+          value: true,
+          label: Text('Decode'),
+          icon: Icon(Icons.lock_open, size: 16)),
+    ],
+    selected: {decode},
+    showSelectedIcon: false,
+    style: _denseSegmented,
+    onSelectionChanged: (s) => onChanged(s.first),
+  );
+}
+
+/// The status text every MIME surface shows: whether a run would hit the
+/// selection or the whole document, or why it is disabled.
+Widget _mimeStatusText(
+    bool enabled, bool hasSelection, ColorScheme scheme) {
+  return Text(
+    enabled
+        ? (hasSelection
+            ? 'Transforms the selection.'
+            : '⚠️ Transforms the whole document.')
+        : 'Open a document in Edit mode to run MIME tools.',
+    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+  );
+}
+
+/// The MIME tools bar: one docked bar carrying all four categories as tabs,
+/// with the selected category's options and Apply on the row below.
+///
+/// This is the shape the feature was asked for — the tabbed panel, docked —
+/// rather than one bar per operation. Per-category option state is held here
+/// so switching tabs and coming back does not reset the user's choices.
+class MimeToolsPanel extends StatefulWidget {
+  final bool enabled;
+
+  /// True when the active editor has a selection: Apply transforms just it.
+  final bool hasSelection;
+  final ValueChanged<MimeOp> onRun;
+
+  const MimeToolsPanel({
+    super.key,
+    required this.enabled,
+    this.hasSelection = false,
+    required this.onRun,
+  });
+
+  @override
+  State<MimeToolsPanel> createState() => _MimeToolsPanelState();
+}
+
+class _MimeToolsPanelState extends State<MimeToolsPanel> {
+  MimeCategory _tab = MimeCategory.base64;
+
+  // Per-category state, preserved when switching tabs.
+  bool _b64Decode = false;
+  bool _b64Padding = true;
+  bool _b64UnixEol = false;
+  bool _b64Strict = false;
+  bool _b64ByLine = false;
+
+  bool _qpDecode = false;
+
+  bool _urlDecode = false;
+  UrlEncodeVariant _urlVariant = UrlEncodeVariant.rfc1738;
+  bool _urlByLine = false;
+
+  // SAML is decode-only, no state.
+
+  MimeOp get _currentOp {
+    switch (_tab) {
+      case MimeCategory.base64:
+        return MimeOp(
+          category: MimeCategory.base64,
+          decode: _b64Decode,
+          b64Padding: _b64Padding,
+          b64UnixEol: _b64UnixEol,
+          b64Strict: _b64Strict,
+          byLine: _b64ByLine,
+        );
+      case MimeCategory.quotedPrintable:
+        return MimeOp(
+            category: MimeCategory.quotedPrintable, decode: _qpDecode);
+      case MimeCategory.url:
+        return MimeOp(
+          category: MimeCategory.url,
+          decode: _urlDecode,
+          urlVariant: _urlVariant,
+          byLine: _urlByLine,
+        );
+      case MimeCategory.saml:
+        return const MimeOp(category: MimeCategory.saml, decode: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Wrap(
+          spacing: 4,
+          runSpacing: 2,
+          children: [
+            for (final c in MimeCategory.values)
+              _TabButton(
+                label: c.label,
+                selected: _tab == c,
+                scheme: scheme,
+                onTap: () => setState(() => _tab = c),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ..._categoryOptions(scheme),
+            _mimeStatusText(widget.enabled, widget.hasSelection, scheme),
+            FilledButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 16),
+              // Live label: the tabs and the Encode/Decode selector both
+              // change which operation this runs, so a constant 'Apply'
+              // would lie about what the button does.
+              label: Text('Apply · ${_currentOp.label}',
+                  style: const TextStyle(fontSize: 13)),
+              style: _denseFilledStyle,
+              onPressed:
+                  widget.enabled ? () => widget.onRun(_currentOp) : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _categoryOptions(ColorScheme scheme) {
+    switch (_tab) {
+      case MimeCategory.base64:
+        return [
+          _mimeModeSelector(
+              _b64Decode, (v) => setState(() => _b64Decode = v)),
+          if (_b64Decode) ...[
+            _mimeCheck('Strict', _b64Strict,
+                (v) => setState(() => _b64Strict = v)),
+          ] else ...[
+            _mimeCheck('Padding', _b64Padding,
+                (v) => setState(() => _b64Padding = v)),
+            _mimeCheck('Unix EOL', _b64UnixEol,
+                (v) => setState(() => _b64UnixEol = v)),
+          ],
+          _mimeCheck(
+              'By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
+        ];
+      case MimeCategory.quotedPrintable:
+        return [
+          _mimeModeSelector(_qpDecode, (v) => setState(() => _qpDecode = v)),
+        ];
+      case MimeCategory.url:
+        return [
+          _mimeModeSelector(
+              _urlDecode, (v) => setState(() => _urlDecode = v)),
+          if (!_urlDecode) ...[
+            SegmentedButton<UrlEncodeVariant>(
+              segments: const [
+                ButtonSegment(
+                    value: UrlEncodeVariant.rfc1738, label: Text('RFC1738')),
+                ButtonSegment(
+                    value: UrlEncodeVariant.extended, label: Text('Extended')),
+                ButtonSegment(
+                    value: UrlEncodeVariant.full, label: Text('Full')),
+              ],
+              selected: {_urlVariant},
+              showSelectedIcon: false,
+              style: _denseSegmented,
+              onSelectionChanged: (s) =>
+                  setState(() => _urlVariant = s.first),
+            ),
+            _mimeCheck('By line', _urlByLine,
+                (v) => setState(() => _urlByLine = v)),
+          ],
+        ];
+      case MimeCategory.saml:
+        return [
+          Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
+          Text(
+            'Base64-decode then raw-inflate (HTTP-Redirect binding).',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ];
+    }
+  }
+}
+
+/// A tab-styled button: label with an underline accent when selected.
+class _TabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  const _TabButton({
+    required this.label,
+    required this.selected,
+    required this.scheme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? scheme.primary : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A panel for a specific MIME tool category (e.g. Base64) without tabs.
 /// Can be initialized to a specific decode/encode state.
 class SingleMimeToolPanel extends StatefulWidget {

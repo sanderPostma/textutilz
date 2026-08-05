@@ -105,6 +105,8 @@ void main() {
     'mime.url.encode': 118,
     'mime.url.decode': 118,
     'mime.saml.decode': 88,
+    // The tabbed bar: a tab row plus the selected category's option run.
+    'mime': 119,
   };
 
   Widget heightHost(String panelId) => MaterialApp(

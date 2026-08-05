@@ -77,13 +77,26 @@ one-click apply there is nothing to remember.
 └──────────────────────────────────────────────────────┘
 ```
 
-### MIME bars — Apply retained
+### The MIME bar — tabs and Apply retained
 
-`Base64`, `Quoted-printable` and `URL` encode/decode, plus `SAML Decode`.
+**One bar, carrying all four categories as tabs** — `Base64`,
+`Quoted-printable`, `URL`, `SAML` — exactly the panel that existed before,
+docked instead of opened full-height in the ribbon.
 
-These carry checkboxes that change what the operation does, so the user must be
-able to set options before anything runs. Chips select the variant, checkboxes
-modify it, `Apply` executes.
+This spec originally called for seven separate bars, one per operation, with
+the menu listing them individually. Built that way it was wrong twice over:
+the Tools menu became a wall of nine near-identical entries, and the tabbed
+panel the user actually wanted docked was gone. "Convert the MIME tools panel
+into a bar" meant that panel, with its tabs.
+
+The seven per-operation panel ids still exist and still dock as single-category
+bars; they are reachable from ribbon search for a user who knows exactly which
+operation they want. The menu carries one `MIME tools` entry.
+
+The categories carry checkboxes that change what the operation does, so the
+user must be able to set options before anything runs. Tabs select the
+category, the Encode/Decode selector and checkboxes modify it, `Apply`
+executes. Per-category option state is preserved across tab switches.
 
 ```
 ┌──────────────────────────────────────────────────────┐

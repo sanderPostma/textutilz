@@ -29,9 +29,16 @@ class ToolBar extends StatelessWidget {
     required this.onClose,
   });
 
+  /// The aggregate MIME tools bar: all four categories as tabs in one bar.
+  /// This is the menu's MIME entry; the per-operation ids below are reachable
+  /// from ribbon search when the user knows exactly which one they want.
+  static const String mimeAllId = 'mime';
+
   /// Panel ids that dock as a bar. Everything else stays in the ribbon.
   static bool handles(String panelId) =>
-      _editSpecs.containsKey(panelId) || _mimeSpecs.containsKey(panelId);
+      panelId == mimeAllId ||
+      _editSpecs.containsKey(panelId) ||
+      _mimeSpecs.containsKey(panelId);
 
   static const Map<String, (EditCategory, String)> _editSpecs = {
     'edit.case': (EditCategory.caseConv, 'Convert Case'),
@@ -61,6 +68,17 @@ class ToolBar extends StatelessWidget {
           enabled: editToolsEnabled,
           category: edit.$1,
           onRun: onRunEditOp,
+        ),
+      );
+    }
+    if (panelId == mimeAllId) {
+      return DockedBar(
+        title: 'MIME tools',
+        onClose: onClose,
+        child: MimeToolsPanel(
+          enabled: mimeToolsEnabled,
+          hasSelection: mimeHasSelection,
+          onRun: onRunMimeOp,
         ),
       );
     }

@@ -236,11 +236,17 @@ impl CommandRegistry {
         });
 
         // Tools
-        //
-        // There is deliberately no aggregate "MIME tools" command: the seven
-        // MIME operations below are each listed on their own and open their
-        // own docked bar. A wrapper entry would reopen the ribbon panel this
-        // replaced.
+        self.commands.push(CommandDescriptor {
+            id: "tools.mime".to_string(),
+            title: "MIME tools".to_string(),
+            category: "Tools".to_string(),
+            icon: Some("transform".to_string()),
+            shortcut: None,
+            toggled: None,
+            // Opens the tabbed MIME bar, not a ribbon panel.
+            panel_id: Some("mime".to_string()),
+            action_id: None,
+        });
 
         // Specific MIME Commands
         self.commands.push(CommandDescriptor {

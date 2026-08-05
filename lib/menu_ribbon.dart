@@ -339,7 +339,9 @@ class _MenuRibbonState extends State<MenuRibbon> {
   bool _entryEnabled(CommandDescriptor cmd) {
     final panel = cmd.panelId;
     if (panel == null || !ToolBar.handles(panel)) return true;
-    return panel.startsWith('mime.')
+    // 'mime' (the tabbed bar) has no dot, so it needs naming explicitly or it
+    // would fall through to the edit gate.
+    return panel == ToolBar.mimeAllId || panel.startsWith('mime.')
         ? widget.mimeToolsEnabled
         : widget.editToolsEnabled;
   }
@@ -419,17 +421,9 @@ class _MenuRibbonState extends State<MenuRibbon> {
           title: 'Tools',
           accent: _toolsAccent,
           entries: [
-            // The seven MIME tools are listed individually, like the edit
-            // tools above: each opens its own docked bar. The old aggregate
-            // 'MIME tools' entry opened a ribbon panel instead, which is what
-            // this feature set out to remove.
-            entry('mime.base64.encode'),
-            entry('mime.base64.decode'),
-            entry('mime.qp.encode'),
-            entry('mime.qp.decode'),
-            entry('mime.url.encode'),
-            entry('mime.url.decode'),
-            entry('mime.saml.decode'),
+            // One MIME entry, opening the tabbed MIME bar. The seven
+            // per-operation ids stay reachable from search.
+            entry('tools.mime'),
             entry('tools.jwt'),
             entry('tools.hex'),
           ],
