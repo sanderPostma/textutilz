@@ -18,7 +18,7 @@ class EditOp {
   const EditOp({required this.opId, required this.label});
 }
 
-class EditToolsPanel extends StatefulWidget {
+class EditToolsPanel extends StatelessWidget {
   final bool enabled;
   final ValueChanged<EditOp> onRun;
   final EditCategory category;
@@ -29,42 +29,6 @@ class EditToolsPanel extends StatefulWidget {
     required this.onRun,
     required this.category,
   });
-
-  @override
-  State<EditToolsPanel> createState() => _EditToolsPanelState();
-}
-
-class _EditToolsPanelState extends State<EditToolsPanel> {
-  // Option states
-  String _selectedCaseOp = 'edit.case.uppercase';
-  String _selectedEolOp = 'edit.eol.windows';
-  String _selectedBlankOp = 'edit.blank.trim_trailing';
-  String _selectedCommentOp = 'edit.comment.toggle_single_line';
-
-  EditOp get _currentOp {
-    switch (widget.category) {
-      case EditCategory.caseConv:
-        return EditOp(
-          opId: _selectedCaseOp,
-          label: _caseOps.firstWhere((o) => o.$1 == _selectedCaseOp).$2,
-        );
-      case EditCategory.eolConv:
-        return EditOp(
-          opId: _selectedEolOp,
-          label: _eolOps.firstWhere((o) => o.$1 == _selectedEolOp).$2,
-        );
-      case EditCategory.blankOps:
-        return EditOp(
-          opId: _selectedBlankOp,
-          label: _blankOps.firstWhere((o) => o.$1 == _selectedBlankOp).$2,
-        );
-      case EditCategory.commentOps:
-        return EditOp(
-          opId: _selectedCommentOp,
-          label: _commentOps.firstWhere((o) => o.$1 == _selectedCommentOp).$2,
-        );
-    }
-  }
 
   static const _caseOps = [
     ('edit.case.uppercase', 'UPPERCASE'),
@@ -104,46 +68,22 @@ class _EditToolsPanelState extends State<EditToolsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            switch (widget.category) {
-              EditCategory.caseConv => _buildChoiceList(_caseOps, _selectedCaseOp, (val) => setState(() => _selectedCaseOp = val!)),
-              EditCategory.eolConv => _buildChoiceList(_eolOps, _selectedEolOp, (val) => setState(() => _selectedEolOp = val!)),
-              EditCategory.blankOps => _buildChoiceList(_blankOps, _selectedBlankOp, (val) => setState(() => _selectedBlankOp = val!)),
-              EditCategory.commentOps => _buildChoiceList(_commentOps, _selectedCommentOp, (val) => setState(() => _selectedCommentOp = val!)),
-            },
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              icon: const Icon(Icons.play_arrow, size: 16),
-              label: Text('Apply ${_currentOp.label}'),
-              onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChoiceList(List<(String, String)> ops, String groupVal, ValueChanged<String?> onChanged) {
+    final ops = switch (category) {
+      EditCategory.caseConv => _caseOps,
+      EditCategory.eolConv => _eolOps,
+      EditCategory.blankOps => _blankOps,
+      EditCategory.commentOps => _commentOps,
+    };
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: ops.map((op) {
-        final selected = groupVal == op.$1;
-        return ChoiceChip(
-          label: Text(op.$2),
-          selected: selected,
-          onSelected: (sel) {
-            if (sel) onChanged(op.$1);
-          },
-        );
-      }).toList(),
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: ops
+          .map((op) => ActionChip(
+                label: Text(op.$2),
+                onPressed: enabled ? () => onRun(EditOp(opId: op.$1, label: op.$2)) : null,
+              ))
+          .toList(),
     );
   }
 }
