@@ -6,6 +6,8 @@
 
 **Architecture:** All matching lives in Rust behind one primitive, `EditSession::find_in_rows(query, from_row, to_row)`. Everything else is a paging policy over it: stepping pages by 4096-row windows with background prefetch, viewport highlighting scans only the visible rows, and Replace All is a single backwards Rust pass in one undo group. Dart holds only view state — the current match index and which windows have been loaded.
 
+**Scanning always begins at row 0 and pages forward only.** The caret decides which *loaded* match is current, via anchoring in `refresh()` — it does not decide where scanning starts. Backward window paging is therefore unreachable and deliberately absent; an earlier draft of this plan specified it, and it was dead code. The accepted cost is that the first search on a very large document scans from the top rather than from the caret.
+
 **Tech Stack:** Rust (`regex` crate, `flutter_rust_bridge` 2.12.0), Flutter/Dart, `cargo test` for Rust, `flutter test` for Dart.
 
 ## Global Constraints
@@ -1130,6 +1132,25 @@ git commit -m "feat(search): add replace_span and replace_all_in_rows"
 ### Task 5: `FindController` — the paging state machine
 
 The one piece of non-trivial Dart logic. It is view state (which match is current, which windows are loaded), not domain logic, so it belongs on this side of the bridge.
+
+> **AMENDED AFTER IMPLEMENTATION — `lib/find_state.dart` is the authority, not the sample below.**
+> Review found one Critical and three Important defects in the sample code in this section.
+> The delivered implementation differs from it in four ways:
+>
+> 1. **Generation is rechecked after every await in `stepForward`/`stepBackward`**, not only
+>    inside the loaders. The sample mutated `_currentIndex` and notified against state that
+>    could belong to a newer query — reachable by typing while a step is in flight.
+> 2. **`_maybePrefetch` holds an in-flight flag** cleared via `whenComplete`. Without it two
+>    prefetches could request the same window and both append, duplicating matches and
+>    breaking the exact-tiling contract that exists so Dart never has to dedupe.
+> 3. **All backward window paging is deleted** — `_loadBackward`, `_loadedFrom`, and their call
+>    sites. `_loadedFrom` was permanently 0, so none of it could ever execute. See the
+>    forward-only note in the Architecture section.
+> 4. **`_resetMatches()` clears `_sweepRunning`**, closing a leak where clearing the query
+>    mid-sweep left the flag set for the controller's lifetime.
+>
+> The sample below is retained as the design record of what was specified. Read the amendment
+> above before treating any of it as current.
 
 **Files:**
 - Create: `lib/find_state.dart`
