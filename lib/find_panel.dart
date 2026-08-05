@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'docked_bar.dart';
 import 'find_state.dart';
 import 'src/rust/api/search.dart';
 
@@ -334,13 +335,6 @@ class FindPanelState extends State<FindPanel> {
     );
   }
 
-  Widget _closeButton() => IconButton(
-    icon: const Icon(Icons.close, size: 18),
-    tooltip: 'Close (Esc)',
-    onPressed: widget.onClose,
-    visualDensity: VisualDensity.compact,
-  );
-
   /// The find row's single layout, built to be structurally incapable of
   /// overflowing at any width or with any content — there is no width
   /// threshold to tune and no content assumption to outgrow:
@@ -386,7 +380,6 @@ class FindPanelState extends State<FindPanel> {
         _nextArrow(),
         _counterLabel(hasError),
         const Spacer(flex: 3),
-        _closeButton(),
       ],
     );
   }
@@ -415,12 +408,10 @@ class FindPanelState extends State<FindPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final hasError = c.regexError != null;
 
-    return Container(
-      color: scheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    return DockedBar(
+      onClose: widget.onClose,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
