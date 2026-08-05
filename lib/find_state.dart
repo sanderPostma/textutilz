@@ -53,8 +53,8 @@ class FindController extends ChangeNotifier {
           ? _loaded[_currentIndex]
           : null;
 
-  /// Rows already scanned: [_loadedFrom, _loadedTo).
-  int _loadedFrom = 0;
+  /// Rows already scanned: [0, _loadedTo). Scanning always starts at row 0
+  /// (see `refresh`), so there is no separate lower bound to track.
   int _loadedTo = 0;
 
   int? _exactTotal;
@@ -97,9 +97,12 @@ class FindController extends ChangeNotifier {
   void _resetMatches() {
     _loaded.clear();
     _currentIndex = -1;
-    _loadedFrom = 0;
     _loadedTo = 0;
     _exactTotal = null;
+    // A sweep from a superseded scan would otherwise never clear this: it
+    // checks the generation before writing, and a reset here starts no
+    // replacement sweep to do so on its behalf.
+    _sweepRunning = false;
   }
 
   SearchQuery _buildQuery() => SearchQuery(
@@ -179,26 +182,6 @@ class FindController extends ChangeNotifier {
     }
   }
 
-  /// Scan windows backward until a match is found or the top is reached.
-  Future<void> _loadBackward(int gen) async {
-    while (_loadedFrom > 0) {
-      final to = _loadedFrom;
-      final from = (to - kSearchWindowRows).clamp(0, _lineCount);
-      final found = await _session!.findInRows(
-        query: _buildQuery(),
-        fromRow: BigInt.from(from),
-        toRow: BigInt.from(to),
-      );
-      if (gen != _generation) return;
-      _loadedFrom = from;
-      final fresh = _inScope(found);
-      final hadIndex = _currentIndex >= 0;
-      _loaded.insertAll(0, fresh);
-      if (hadIndex) _currentIndex += fresh.length;
-      if (fresh.isNotEmpty) return;
-    }
-  }
-
   List<MatchSpan> _inScope(List<MatchSpan> spans) {
     final sc = _activeScope;
     if (sc == null) return spans;
@@ -216,10 +199,11 @@ class FindController extends ChangeNotifier {
       (wrapAround || _currentIndex < _loaded.length - 1 || _loadedTo < _lineCount);
 
   bool get canStepBackward =>
-      _loaded.isNotEmpty && (wrapAround || _currentIndex > 0 || _loadedFrom > 0);
+      _loaded.isNotEmpty && (wrapAround || _currentIndex > 0);
 
   Future<void> stepForward() async {
     if (_loaded.isEmpty) return;
+    final gen = _generation;
     if (_currentIndex < _loaded.length - 1) {
       _currentIndex++;
       notifyListeners();
@@ -227,7 +211,8 @@ class FindController extends ChangeNotifier {
       return;
     }
     if (_loadedTo < _lineCount) {
-      await _loadForward(_generation);
+      await _loadForward(gen);
+      if (gen != _generation) return;
       if (_currentIndex < _loaded.length - 1) {
         _currentIndex++;
         notifyListeners();
@@ -240,26 +225,25 @@ class FindController extends ChangeNotifier {
     }
   }
 
+  /// Step to the previous loaded match, or wrap to the last match when
+  /// [wrapAround] is on. Scanning always starts at row 0 (see `refresh`), so
+  /// there is never a preceding, not-yet-loaded window to page in — unlike
+  /// `stepForward`, this never needs to fetch anything to move backward
+  /// within already-loaded matches.
   Future<void> stepBackward() async {
     if (_loaded.isEmpty) return;
+    final gen = _generation;
     if (_currentIndex > 0) {
       _currentIndex--;
       notifyListeners();
       _maybePrefetch();
       return;
     }
-    if (_loadedFrom > 0) {
-      await _loadBackward(_generation);
-      if (_currentIndex > 0) {
-        _currentIndex--;
-        notifyListeners();
-        return;
-      }
-    }
     if (wrapAround) {
       // Wrapping to the end needs every match loaded.
       while (_loadedTo < _lineCount) {
-        await _loadForwardOneWindow(_generation);
+        await _loadForwardOneWindow(gen);
+        if (gen != _generation) return;
       }
       _currentIndex = _loaded.length - 1;
       notifyListeners();
@@ -279,19 +263,22 @@ class FindController extends ChangeNotifier {
     _loaded.addAll(_inScope(found));
   }
 
+  /// Whether a prefetch fetch is currently in flight, so a second rapid step
+  /// cannot issue a duplicate request for the same not-yet-loaded window
+  /// (which would double-append the same matches once both resolved).
+  bool _prefetching = false;
+
   /// Load the adjacent window in the background when the cursor nears an edge,
   /// so the next arrow press never waits on a scan.
   void _maybePrefetch() {
+    if (_prefetching) return;
     final gen = _generation;
     if (_loaded.length - _currentIndex <= kPrefetchMargin &&
         _loadedTo < _lineCount) {
+      _prefetching = true;
       unawaited(_loadForwardOneWindow(gen).then((_) {
         if (gen == _generation) notifyListeners();
-      }));
-    } else if (_currentIndex <= kPrefetchMargin && _loadedFrom > 0) {
-      unawaited(_loadBackward(gen).then((_) {
-        if (gen == _generation) notifyListeners();
-      }));
+      }).whenComplete(() => _prefetching = false));
     }
   }
 

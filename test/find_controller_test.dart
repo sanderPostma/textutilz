@@ -174,4 +174,76 @@ void main() {
     await c.refresh();
     expect(c.loaded.length, 1);
   });
+
+  // --- Fix round 1 regression tests ---------------------------------------
+
+  test('stepForward does not apply state after a superseded generation',
+      () async {
+    // A single early match, plus many more unscanned rows past the first
+    // window, so stepForward must await a further load before it can move.
+    final filler = List.filled(5000, 'x').join('\n');
+    final c = await controllerOver('hit\n$filler\n', 'hit');
+    expect(c.loaded.length, 1);
+    expect(c.currentIndex, 0);
+
+    final stepFuture = c.stepForward(); // in flight: awaiting a further load
+
+    // Clearing the query takes refresh()'s early-return path, which is
+    // entirely synchronous (no await): generation bumps and matches reset
+    // deterministically, with no race against the still-pending step.
+    c.query.text = '';
+    await c.refresh();
+    expect(c.currentIndex, -1);
+    expect(c.loaded, isEmpty);
+
+    await stepFuture; // let the now-stale load resolve, whenever that is
+
+    expect(c.currentIndex, -1,
+        reason: "the stale stepForward must not touch the new generation's state");
+    expect(c.loaded, isEmpty);
+  });
+
+  test('rapid steps do not duplicate a prefetched window', () async {
+    final rows = <String>[];
+    for (var i = 0; i < 4076; i++) {
+      rows.add('x');
+    }
+    for (var i = 0; i < 20; i++) {
+      rows.add('hit'); // rows 4076-4095: fills the first window's tail
+    }
+    for (var i = 0; i < 5; i++) {
+      rows.add('hit'); // rows 4096-4100: only visible after a prefetch
+    }
+    final content = '${rows.join('\n')}\n';
+    final c = await controllerOver(content, 'hit');
+    expect(c.loaded.length, 20);
+
+    // Two rapid steps, neither awaited before the other starts: both land in
+    // the fast path (already-loaded matches) and can each try to prefetch
+    // the same next window before the first prefetch resolves.
+    final f1 = c.stepForward();
+    final f2 = c.stepForward();
+    await Future.wait([f1, f2]);
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final seen = <String>{};
+    for (final m in c.loaded) {
+      final key =
+          '${m.startRow}-${m.startCol}-${m.endRow}-${m.endCol}';
+      expect(seen.add(key), true, reason: 'duplicate match: $key');
+    }
+  });
+
+  test('sweepRunning does not leak when the query is cleared mid-sweep',
+      () async {
+    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+    expect(c.sweepRunning, true,
+        reason: 'refresh() starts a background sweep synchronously');
+
+    c.query.text = '';
+    await c.refresh(); // early return: must not leave the sweep orphaned
+    await c.awaitSweep();
+
+    expect(c.sweepRunning, false);
+  });
 }
