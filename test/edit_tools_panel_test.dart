@@ -31,6 +31,10 @@ void main() {
   testWidgets('operations do not run when disabled', (tester) async {
     var ran = false;
     await tester.pumpWidget(host(enabled: false, onRun: (_) => ran = true));
+    // warnIfMissed: false below silences "no widget was hit", which would also
+    // silence "the chip vanished entirely" — the test would then pass while
+    // proving nothing. Assert the chip is actually there first.
+    expect(find.text('Block Comment'), findsOneWidget);
     await tester.tap(find.text('Block Comment'), warnIfMissed: false);
     await tester.pump();
     expect(ran, isFalse);
