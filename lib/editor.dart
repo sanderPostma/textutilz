@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:textutilz/src/rust/api/edit_session.dart';
+import 'package:textutilz/src/rust/api/search.dart';
 
 class SelectionRange {
   final int startRow;
@@ -30,6 +31,24 @@ double editorContentWidth(int maxLineLength, double charWidth) {
   return maxLineLength * charWidth + trailingChars * charWidth + caretPadding;
 }
 
+/// Normalize a selection anchor/head pair `(anchorRow, anchorCol)` →
+/// `(headRow, headCol)` into `(startRow, startCol, endRow, endCol)` with
+/// start always at or before end, regardless of which way the user dragged.
+(int, int, int, int) normalizeSelection(int anchorRow, int anchorCol, int headRow, int headCol) {
+  var sr = anchorRow;
+  var sc = anchorCol;
+  var er = headRow;
+  var ec = headCol;
+  if (sr > er || (sr == er && sc > ec)) {
+    final tr = sr, tc = sc;
+    sr = er;
+    sc = ec;
+    er = tr;
+    ec = tc;
+  }
+  return (sr, sc, er, ec);
+}
+
 class CustomEditor extends StatefulWidget {
   /// The Rust-owned editable document. All text mutations and undo/redo go
   /// through this; the editor holds only view/cursor state.
@@ -44,6 +63,11 @@ class CustomEditor extends StatefulWidget {
   final ValueChanged<double>? onFontSizeChanged;
   final bool readOnly;
 
+  /// Matches to highlight, and which of them is current. Supplied by the host
+  /// from the find panel; already scoped to the visible rows.
+  final List<MatchSpan> matches;
+  final MatchSpan? currentMatch;
+
   const CustomEditor({
     super.key,
     required this.session,
@@ -53,6 +77,8 @@ class CustomEditor extends StatefulWidget {
     this.onCursorChanged,
     this.onContentChanged,
     this.onFontSizeChanged,
+    this.matches = const [],
+    this.currentMatch,
   });
 
   @override
@@ -94,6 +120,45 @@ class CustomEditorState extends State<CustomEditor> {
 
   EditSession get _session => widget.session;
   int get _visualLineCount => _session.lineCount().toInt();
+
+  /// First and last row currently on screen, for viewport-scoped search
+  /// highlighting. Clamped to the document.
+  (int, int) get visibleRowRange {
+    if (!_vScroll.hasClients) return (0, 0);
+    final first = (_vScroll.offset / _rowHeight).floor();
+    final visible = (_vScroll.position.viewportDimension / _rowHeight).ceil();
+    final last = (first + visible).clamp(0, _visualLineCount);
+    return (first.clamp(0, _visualLineCount), last);
+  }
+
+  /// Select [span] and scroll it into view. Used by the find panel when the
+  /// current match changes.
+  void revealSpan(MatchSpan span) {
+    setState(() {
+      _selStartRow = span.startRow.toInt();
+      _selStartCol = span.startCol.toInt();
+      _isBlockSelection = false;
+      _cursorRow = span.endRow.toInt();
+      _cursorCol = span.endCol.toInt();
+    });
+    _scrollToCursor();
+  }
+
+  /// Return keyboard focus to the document. Used when the find panel closes.
+  void focusEditor() => _focusNode.requestFocus();
+
+  /// The current linear selection as a search scope, or null when there is
+  /// none. Backs the panel's "In selection" option.
+  SpanScope? get selectionScope {
+    if (!hasLinearSelection) return null;
+    final (sr, sc, er, ec) = normalizeSelection(_selStartRow!, _selStartCol!, _cursorRow, _cursorCol);
+    return SpanScope(
+      startRow: BigInt.from(sr),
+      startCol: BigInt.from(sc),
+      endRow: BigInt.from(er),
+      endCol: BigInt.from(ec),
+    );
+  }
 
   /// Width of the line-number gutter in logical pixels (0 when hidden). Sized
   /// to the digit count of the last line plus one char of padding each side.
@@ -1329,6 +1394,8 @@ class CustomEditorState extends State<CustomEditor> {
                   gutterWidth: _gutterWidth,
                   gutterBg: Theme.of(context).colorScheme.surfaceContainerHighest,
                   gutterFg: Theme.of(context).colorScheme.onSurface.withOpacity(0.45),
+                  matches: widget.matches,
+                  currentMatch: widget.currentMatch,
                 ),
               ),
             ),
@@ -1391,6 +1458,15 @@ class EditorPainter extends CustomPainter {
   final Color gutterBg;
   final Color gutterFg;
 
+  /// Matches visible in the current viewport. Painted beneath the text.
+  final List<MatchSpan> matches;
+
+  /// The match the find panel is currently on, accented above the rest.
+  final MatchSpan? currentMatch;
+
+  final Color matchColor;
+  final Color currentMatchColor;
+
   double get rowHeight => fontSize * (20.0 / 14.0);
   double get charWidth => fontSize * (8.4 / 14.0);
 
@@ -1411,6 +1487,10 @@ class EditorPainter extends CustomPainter {
     this.gutterWidth = 0,
     this.gutterBg = const Color(0xFF2A2A2A),
     this.gutterFg = const Color(0x80FFFFFF),
+    this.matches = const [],
+    this.currentMatch,
+    this.matchColor = const Color(0x40FFD54F),
+    this.currentMatchColor = const Color(0x80FF9800),
   });
 
   @override
@@ -1426,6 +1506,33 @@ class EditorPainter extends CustomPainter {
     final int visibleRowCount = (size.height / rowHeight).ceil() + 1;
     final int lastVisibleRow = (firstVisibleRow + visibleRowCount).clamp(0, visualLineCount);
     
+    // Match highlights sit under the selection and the text.
+    void paintSpan(MatchSpan span, Color color) {
+      final paint = Paint()..color = color;
+      final startRow = span.startRow.toInt();
+      final endRow = span.endRow.toInt();
+      for (int r = startRow; r <= endRow; r++) {
+        if (r < firstVisibleRow || r > lastVisibleRow) {
+          continue;
+        }
+        final line = getLineText(r);
+        final from = (r == startRow) ? span.startCol.toInt() : 0;
+        final to = (r == endRow) ? span.endCol.toInt() : line.length;
+        final y = (r * rowHeight) - scrollY;
+        canvas.drawRect(
+          Rect.fromLTWH(from * charWidth, y, (to - from) * charWidth, rowHeight),
+          paint,
+        );
+      }
+    }
+
+    for (final m in matches) {
+      paintSpan(m, matchColor);
+    }
+    if (currentMatch != null) {
+      paintSpan(currentMatch!, currentMatchColor);
+    }
+
     // Draw selection first so text renders on top
     if (multiSelections != null && multiSelections!.isNotEmpty) {
       Paint selPaint = Paint()..color = Colors.blue.withOpacity(0.4);
