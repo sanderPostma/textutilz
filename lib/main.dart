@@ -21,6 +21,7 @@ import 'editor_settings.dart';
 import 'package:textutilz/src/rust/api/edit_ops.dart' as rust_edit_ops;
 import 'find_panel.dart';
 import 'find_state.dart';
+import 'tool_bar.dart';
 import 'package:textutilz/src/rust/api/search.dart' show MatchSpan;
 
 
@@ -111,6 +112,10 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   final FindController _findController = FindController();
   final GlobalKey<FindPanelState> _findPanelKey = GlobalKey<FindPanelState>();
   bool _isFindVisible = false;
+
+  /// The docked tool bar's panel id, or null when none is open. Mutually
+  /// exclusive with the find bar — see _openFind / _openToolBar.
+  String? _activeToolPanelId;
 
   int _newDocCounter = 1;
   bool _ctrlHeld = false; // while held, wheel zooms Read/Tail instead of scrolling
@@ -768,9 +773,15 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   // KeyEventResult.ignored for these Ctrl combos so the ancestor Focus sees them.
   KeyEventResult _handleGlobalShortcut(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (event.logicalKey == LogicalKeyboardKey.escape && _isFindVisible) {
-      _closeFind();
-      return KeyEventResult.handled;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_activeToolPanelId != null) {
+        _closeToolBar();
+        return KeyEventResult.handled;
+      }
+      if (_isFindVisible) {
+        _closeFind();
+        return KeyEventResult.handled;
+      }
     }
     if (event.logicalKey == LogicalKeyboardKey.f3 && _isFindVisible) {
       if (HardwareKeyboard.instance.isShiftPressed) {
@@ -843,6 +854,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       }
     }
     _findController.setMode(mode);
+    _activeToolPanelId = null;
     setState(() => _isFindVisible = true);
     _scheduleViewportScan();
     // Re-focus the query field even when the panel is already open (its
@@ -860,6 +872,20 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       _isFindVisible = false;
       _viewportMatches = const [];
     });
+    _activeEditor?.focusEditor();
+  }
+
+  /// Dock a tool bar, closing the find bar. Only one bar shows at a time.
+  void _openToolBar(String panelId) {
+    setState(() {
+      _isRibbonVisible = false;
+      _isFindVisible = false;
+      _activeToolPanelId = panelId;
+    });
+  }
+
+  void _closeToolBar() {
+    setState(() => _activeToolPanelId = null);
     _activeEditor?.focusEditor();
   }
 
@@ -948,8 +974,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// and rescanned; the query text and option toggles persist across tabs,
   /// matching Notepad++.
   void _retargetFind() {
-    if (!_isFindVisible) return;
     final tab = _activeTab;
+    if (_activeToolPanelId != null &&
+        (tab == null || tab.mode != ViewMode.edit)) {
+      setState(() => _activeToolPanelId = null);
+    }
+    if (!_isFindVisible) return;
     if (tab == null || tab.mode != ViewMode.edit) {
       _findController.attach(null, 0);
       _viewportScanGen++;
@@ -1203,6 +1233,25 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
               children: [
                 Column(
                   children: [
+                    if (_isFindVisible && _activeTab?.mode == ViewMode.edit)
+                      FindPanel(
+                        key: _findPanelKey,
+                        controller: _findController,
+                        onClose: _closeFind,
+                        onReveal: (span) => _activeEditor?.revealSpan(span),
+                      ),
+                    if (_activeToolPanelId != null &&
+                        _activeTab?.mode == ViewMode.edit)
+                      ToolBar(
+                        panelId: _activeToolPanelId!,
+                        editToolsEnabled: _activeEditor != null,
+                        mimeToolsEnabled: _activeEditor != null,
+                        mimeHasSelection:
+                            _activeEditor?.hasLinearSelection ?? false,
+                        onRunEditOp: _runEditOp,
+                        onRunMimeOp: _runMimeOp,
+                        onClose: _closeToolBar,
+                      ),
                     if (_tabs.isNotEmpty)
                       Container(
                         height: 36,
@@ -1286,13 +1335,6 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                         ),
                       )
                     else if (_activeTab != null && _activeTab!.mode == ViewMode.edit) ...[
-                      if (_isFindVisible)
-                        FindPanel(
-                          key: _findPanelKey,
-                          controller: _findController,
-                          onClose: _closeFind,
-                          onReveal: (span) => _activeEditor?.revealSpan(span),
-                        ),
                       Expanded(
                         child: CustomEditor(
                           key: _activeTab!.editorKey,
@@ -1493,6 +1535,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                       currentAutoDelete: _activeTab?.meta.autoDelete,
                       onSetAutoDelete: _activeTab != null ? _setAutoDelete : null,
                       onCloseTab: _activeTab != null ? _closeActiveTab : null,
+                      onOpenToolBar: _openToolBar,
                     ),
                   ),
               ],

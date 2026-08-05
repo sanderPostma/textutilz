@@ -4,6 +4,7 @@ import 'package:textutilz/src/rust/api/commands.dart';
 import 'document_state.dart';
 import 'mime_tools_panel.dart';
 import 'edit_tools_panel.dart';
+import 'tool_bar.dart';
 class MenuEntry {
   final String label;
   final IconData icon;
@@ -132,6 +133,10 @@ class MenuRibbon extends StatefulWidget {
   final AutoDelete? currentAutoDelete;
   final ValueChanged<AutoDelete>? onSetAutoDelete;
 
+  /// Opens a tool panel as a docked bar instead of an in-ribbon panel.
+  /// Only called for ids `ToolBar.handles` claims.
+  final ValueChanged<String>? onOpenToolBar;
+
   const MenuRibbon({
     super.key,
     this.onOpen,
@@ -167,6 +172,7 @@ class MenuRibbon extends StatefulWidget {
     this.onReplace,
     this.currentAutoDelete,
     this.onSetAutoDelete,
+    this.onOpenToolBar,
   });
 
   @override
@@ -215,6 +221,11 @@ class _MenuRibbonState extends State<MenuRibbon> {
   CommandDescriptor? _activeCommand;
 
   void _openCommandPanel(CommandDescriptor cmd) {
+    final id = cmd.panelId;
+    if (id != null && ToolBar.handles(id) && widget.onOpenToolBar != null) {
+      widget.onOpenToolBar!(id);
+      return;
+    }
     setState(() => _activeCommand = cmd);
     if (cmd.id == 'file.new') widget.onNew?.call();
   }
