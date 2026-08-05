@@ -110,18 +110,6 @@ class FindPanelState extends State<FindPanel> {
     );
   }
 
-  /// Below this available width the panel switches from a single-line `Row`
-  /// (with the close button pinned to the far right via `Spacer`) to a
-  /// `Wrap` that reflows onto extra lines instead of overflowing. The full
-  /// row (icon, mode toggle, 260px query field, five option toggles, the
-  /// search-mode dropdown, both step arrows, the counter, and Count) needs
-  /// ~1014px of content width to lay out on one line without overflowing —
-  /// measured empirically by probing widths in 20-30px steps and watching
-  /// for `RenderFlex overflowed`. 1024 leaves headroom above that measured
-  /// point, and is comfortably above the 500px width the narrow-window
-  /// regression test exercises.
-  static const double _wideLayoutThreshold = 1024;
-
   Widget _leadingIcon() => const Icon(Icons.search, size: 16);
 
   Widget _modeToggle() => Tooltip(
@@ -144,28 +132,39 @@ class FindPanelState extends State<FindPanel> {
     ),
   );
 
+  /// The query field is `Flexible` rather than a fixed `SizedBox(width:
+  /// 260)`, so it shrinks (down to [minWidth]) instead of forcing the row
+  /// wider than the available space. `ConstrainedBox` caps its growth at
+  /// 260 too, so it doesn't balloon to fill a very wide window either — it
+  /// keeps the same footprint it always had whenever there's room for it.
+  /// `flex: 2` (relative to the other flexible siblings — see `_findRow`'s
+  /// doc comment) keeps its guaranteed share comfortably above [minWidth]
+  /// even at the narrowest width this panel is expected to survive.
   Widget _queryField(bool hasError) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 260,
-      child: Tooltip(
-        message: c.regexError ?? 'Find what',
-        child: TextField(
-          controller: c.query,
-          focusNode: _queryFocus,
-          style: const TextStyle(fontSize: 13),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: 'Find what…',
-            border: const OutlineInputBorder(),
-            enabledBorder: hasError
-                ? OutlineInputBorder(
-                    borderSide: BorderSide(color: scheme.error),
-                  )
-                : null,
+    return Flexible(
+      flex: 2,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 40, maxWidth: 260),
+        child: Tooltip(
+          message: c.regexError ?? 'Find what',
+          child: TextField(
+            controller: c.query,
+            focusNode: _queryFocus,
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Find what…',
+              border: const OutlineInputBorder(),
+              enabledBorder: hasError
+                  ? OutlineInputBorder(
+                      borderSide: BorderSide(color: scheme.error),
+                    )
+                  : null,
+            ),
+            onChanged: (_) => c.scheduleRefresh(),
+            onSubmitted: (_) => _next(),
           ),
-          onChanged: (_) => c.scheduleRefresh(),
-          onSubmitted: (_) => _next(),
         ),
       ),
     );
@@ -222,39 +221,81 @@ class FindPanelState extends State<FindPanel> {
     _searchModeSelector(),
   ];
 
-  /// Step arrows, the match counter, and the Count button — kept together
-  /// since the counter is only meaningful next to the arrows that move it.
-  List<Widget> _navWidgets(bool hasError) {
+  /// The option toggles and search-mode dropdown, in an `Expanded` +
+  /// horizontally-scrolling `SingleChildScrollView`. Unlike a fixed-size
+  /// cluster, this can never force the row wider than its allotted share:
+  /// `SingleChildScrollView` always renders at exactly the size it's given
+  /// and scrolls whatever doesn't fit, rather than overflowing it. These are
+  /// the least essential controls in the row, so they're the first thing
+  /// allowed to become scroll-to-reach when space is tight.
+  ///
+  /// This is `Expanded`, not `Flexible` — deliberately. An earlier version
+  /// used `Flexible` here and wrapped the scroll view in `IntrinsicWidth` to
+  /// try to make it shrink-wrap to content instead of always filling its
+  /// budget. That combination is unreliable: `IntrinsicWidth` over a
+  /// scrollable produced an inconsistent layout (sibling widgets measured as
+  /// overlapping the toggle cluster's own reported bounds), which is a known
+  /// rough edge of asking a `Viewport`-based widget for its intrinsic size.
+  /// `Expanded` avoids the whole class of problem by not asking for
+  /// shrink-wrapping at all: it *always* fully consumes its flex share,
+  /// which is exactly what `SingleChildScrollView` does anyway — so nothing
+  /// is wasted or double-counted, and the layout math in `_findRow` stays
+  /// simple and predictable (see that doc comment for why predictability
+  /// here is what keeps the close button pinned to the right edge).
+  Widget _optionCluster() {
+    return Expanded(
+      flex: 6,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(spacing: 6, children: _optionWidgets()),
+      ),
+    );
+  }
+
+  Widget _prevArrow() => IconButton(
+    icon: const Icon(Icons.keyboard_arrow_up, size: 18),
+    tooltip: 'Previous match (Shift+F3)',
+    onPressed: c.canStepBackward ? _prev : null,
+    visualDensity: VisualDensity.compact,
+  );
+
+  Widget _nextArrow() => IconButton(
+    icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+    tooltip: 'Next match (F3)',
+    onPressed: c.canStepForward ? _next : null,
+    visualDensity: VisualDensity.compact,
+  );
+
+  /// The match counter can grow arbitrarily wide with a big document — e.g.
+  /// "1 of 20000+" — so it's `Expanded` with `overflow: ellipsis` rather
+  /// than a plain `Text`: a long label truncates instead of pushing the row
+  /// wider than the space it was given. `Expanded` (not `Flexible`) for the
+  /// same reason as `_optionCluster`: it always fully consumes its flex
+  /// share, so it can't leave unpredictable unused budget behind for
+  /// `Spacer` to fail to reclaim.
+  Widget _counterLabel(bool hasError) {
     final scheme = Theme.of(context).colorScheme;
-    return [
-      IconButton(
-        icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-        tooltip: 'Previous match (Shift+F3)',
-        onPressed: c.canStepBackward ? _prev : null,
-        visualDensity: VisualDensity.compact,
-      ),
-      IconButton(
-        icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-        tooltip: 'Next match (F3)',
-        onPressed: c.canStepForward ? _next : null,
-        visualDensity: VisualDensity.compact,
-      ),
-      Text(
+    return Expanded(
+      flex: 1,
+      child: Text(
         c.counterLabel,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
         style: TextStyle(
           fontSize: 12,
           color: hasError ? scheme.error : scheme.onSurfaceVariant,
         ),
       ),
-      Tooltip(
-        message: 'Count all matches',
-        child: TextButton(
-          onPressed: c.query.text.isEmpty || hasError ? null : c.recount,
-          child: const Text('Count'),
-        ),
-      ),
-    ];
+    );
   }
+
+  Widget _countButton(bool hasError) => Tooltip(
+    message: 'Count all matches',
+    child: TextButton(
+      onPressed: c.query.text.isEmpty || hasError ? null : c.recount,
+      child: const Text('Count'),
+    ),
+  );
 
   Widget _closeButton() => IconButton(
     icon: const Icon(Icons.close, size: 18),
@@ -263,39 +304,52 @@ class FindPanelState extends State<FindPanel> {
     visualDensity: VisualDensity.compact,
   );
 
-  /// Normal-width layout: a single-line `Row` with the close button pinned
-  /// to the far right via `Spacer`, matching the panel's original look.
-  Widget _findRowWide(bool hasError) {
+  /// The find row's single layout, built to be structurally incapable of
+  /// overflowing at any width or with any content — there is no width
+  /// threshold to tune and no content assumption to outgrow:
+  ///
+  /// - The parts that can grow without bound (the query text, the option
+  ///   toggles, the match counter) are each wrapped in `Flexible`/`Expanded`,
+  ///   which hard-caps their rendered width to a bounded share of whatever
+  ///   space is actually available — the inner widget (`TextField`,
+  ///   `SingleChildScrollView`, ellipsized `Text`) always accepts that bound
+  ///   rather than insisting on more, so none of them can push the `Row`'s
+  ///   total width past its constraint. That alone is enough to guarantee no
+  ///   overflow at any width, for any content.
+  /// - The parts that must always stay reachable (the step arrows and the
+  ///   close button) stay rigid, fixed-size widgets outside any
+  ///   `Flexible`/`Expanded`.
+  /// - `Spacer` still works because the outer container is a plain `Row`,
+  ///   not a `Wrap` — so the close button keeps its pin to the far right
+  ///   edge, not just at "wide enough" widths.
+  ///
+  /// The flex weights (query: 2, option cluster: 6, counter: 1, spacer: 3)
+  /// are chosen for a second reason beyond avoiding overflow — getting
+  /// `Spacer` an *accurate* share of the truly-left-over space, so the close
+  /// button visually lands near the true right edge rather than stranded
+  /// mid-row. `Flex`'s space division happens once, up front, and is never
+  /// renegotiated: a flexible child that renders *smaller* than its
+  /// allotted share doesn't hand the difference to `Spacer` — that space is
+  /// simply gone. `_optionCluster` and `_counterLabel` are `Expanded`
+  /// specifically so they can't under-use their share (a `SingleChildScrollView`
+  /// or a boxed `Text` always fully occupies the width it's given). The
+  /// query field is the one exception — it's capped at 260px and so *can*
+  /// render smaller than its share — but giving it a modest flex weight (2,
+  /// versus the option cluster's 6) keeps its typical share close to 260 in
+  /// the first place, so how much goes unclaimed stays small.
+  Widget _findRow(bool hasError) {
     return Row(
       spacing: 6,
       children: [
         _leadingIcon(),
         _modeToggle(),
         _queryField(hasError),
-        ..._optionWidgets(),
-        ..._navWidgets(hasError),
-        const Spacer(),
-        _closeButton(),
-      ],
-    );
-  }
-
-  /// Narrow-width layout: everything in one `Wrap` so controls reflow onto
-  /// extra lines instead of throwing a `RenderFlex overflowed` error. The
-  /// close button is no longer pinned to a hard right edge here — there is
-  /// no space to reserve for that — but it stays reachable at the end of
-  /// the flow.
-  Widget _findRowNarrow(bool hasError) {
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 6,
-      runSpacing: 4,
-      children: [
-        _leadingIcon(),
-        _modeToggle(),
-        _queryField(hasError),
-        ..._optionWidgets(),
-        ..._navWidgets(hasError),
+        _optionCluster(),
+        _prevArrow(),
+        _nextArrow(),
+        _counterLabel(hasError),
+        _countButton(hasError),
+        const Spacer(flex: 3),
         _closeButton(),
       ],
     );
@@ -334,13 +388,7 @@ class FindPanelState extends State<FindPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return constraints.maxWidth >= _wideLayoutThreshold
-                  ? _findRowWide(hasError)
-                  : _findRowNarrow(hasError);
-            },
-          ),
+          _findRow(hasError),
           if (c.mode == FindPanelMode.replace) ...[
             const SizedBox(height: 4),
             Wrap(

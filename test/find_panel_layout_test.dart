@@ -108,4 +108,85 @@ void main() {
 
     expectCoreControlsUsable(tester);
   });
+
+  // --- Width sweep -----------------------------------------------------
+  //
+  // Two hand-picked widths (500px above) is exactly how a threshold-based
+  // layout slipped through review twice: once because the fixed 260px
+  // query field only fails past some width nobody tried, and again because
+  // a tuned "wide enough" threshold was measured against a short test
+  // counter label ("1 of 2") rather than a realistic one ("1 of 20000").
+  // This sweeps a wide range of widths, in both modes, against a document
+  // large enough to produce a genuinely wide counter label, so there is no
+  // single width or content shape doing all the proving.
+
+  /// A document with a five-digit match count, so `counterLabel` renders
+  /// something like "1 of 20000" rather than the short "1 of 2" used
+  /// elsewhere in this file — the actual shape of content that broke the
+  /// threshold-based layout in an earlier round of this task.
+  Future<FindController> controllerOverManyMatches(WidgetTester tester) async {
+    final content = List.filled(20000, 'hit').join('\n');
+    return controllerOver(tester, content);
+  }
+
+  /// Pumps the real panel once, then resizes it across [minWidth]..[maxWidth]
+  /// in [step] increments, asserting no exception at any width. Reuses one
+  /// pumped widget tree across the sweep rather than re-pumping from scratch
+  /// at every step, so a ~60-step sweep stays fast.
+  Future<void> sweepWidths(
+    WidgetTester tester,
+    FindController controller, {
+    double minWidth = 400,
+    double maxWidth = 1600,
+    double step = 40,
+  }) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FindPanel(
+            controller: controller,
+            onClose: () {},
+            onReveal: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    for (double w = minWidth; w <= maxWidth; w += step) {
+      tester.view.physicalSize = Size(w, 600);
+      await tester.pump();
+      final ex = tester.takeException();
+      expect(
+        ex,
+        isNull,
+        reason: 'panel overflowed at width $w with a wide counter label: $ex',
+      );
+    }
+  }
+
+  testWidgets(
+    'find panel does not overflow across a width sweep with a wide counter label',
+    (tester) async {
+      final controller = await controllerOverManyMatches(tester);
+      addTearDown(controller.dispose);
+
+      await sweepWidths(tester, controller);
+    },
+  );
+
+  testWidgets(
+    'replace panel does not overflow across a width sweep with a wide counter label',
+    (tester) async {
+      final controller = await controllerOverManyMatches(tester);
+      addTearDown(controller.dispose);
+      controller.setMode(FindPanelMode.replace);
+
+      await sweepWidths(tester, controller);
+    },
+  );
 }
