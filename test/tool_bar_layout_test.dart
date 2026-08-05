@@ -69,4 +69,39 @@ void main() {
     await tester.pumpWidget(host('edit.blank'));
     expect(find.byTooltip('Close (Esc)'), findsOneWidget);
   });
+
+  Widget mimeHost({required bool enabled, required bool hasSelection}) =>
+      MaterialApp(
+        home: Scaffold(
+          body: Column(children: [
+            ToolBar(
+              panelId: 'mime.base64.encode',
+              editToolsEnabled: true,
+              mimeToolsEnabled: enabled,
+              mimeHasSelection: hasSelection,
+              onRunEditOp: (_) {},
+              onRunMimeOp: (_) {},
+              onClose: () {},
+            ),
+          ]),
+        ),
+      );
+
+  testWidgets('mime bar explains it transforms the selection when enabled with a selection',
+      (tester) async {
+    await tester.pumpWidget(mimeHost(enabled: true, hasSelection: true));
+    expect(find.text('Transforms the selection.'), findsOneWidget);
+  });
+
+  testWidgets('mime bar explains it transforms the document when enabled with no selection',
+      (tester) async {
+    await tester.pumpWidget(mimeHost(enabled: true, hasSelection: false));
+    expect(find.text('Transforms the whole document.'), findsOneWidget);
+  });
+
+  testWidgets('mime bar explains why it is disabled', (tester) async {
+    await tester.pumpWidget(mimeHost(enabled: false, hasSelection: false));
+    expect(find.text('Open a document in Edit mode to run MIME tools.'),
+        findsOneWidget);
+  });
 }
