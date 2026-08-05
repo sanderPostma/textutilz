@@ -68,6 +68,11 @@ class CustomEditor extends StatefulWidget {
   final List<MatchSpan> matches;
   final MatchSpan? currentMatch;
 
+  /// Fired whenever the visible row range may have changed (scroll, resize).
+  /// The host re-reads [CustomEditorState.visibleRowRange] itself rather than
+  /// this callback carrying the range, so it stays cheap to fire often.
+  final VoidCallback? onViewportChanged;
+
   const CustomEditor({
     super.key,
     required this.session,
@@ -79,6 +84,7 @@ class CustomEditor extends StatefulWidget {
     this.onFontSizeChanged,
     this.matches = const [],
     this.currentMatch,
+    this.onViewportChanged,
   });
 
   @override
@@ -418,7 +424,10 @@ class CustomEditorState extends State<CustomEditor> {
   @override
   void initState() {
     super.initState();
-    _vScroll.addListener(() => setState(() {}));
+    _vScroll.addListener(() {
+      setState(() {});
+      widget.onViewportChanged?.call();
+    });
     _hScroll.addListener(() => setState(() {}));
     _focusNode.addListener(_onFocusChange);
     HardwareKeyboard.instance.addHandler(_onHardwareKey);

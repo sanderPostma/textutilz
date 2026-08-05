@@ -105,6 +105,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   bool _isRibbonVisible = false;
 
   final FindController _findController = FindController();
+  final GlobalKey<FindPanelState> _findPanelKey = GlobalKey<FindPanelState>();
   bool _isFindVisible = false;
 
   int _newDocCounter = 1;
@@ -159,6 +160,10 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
 
   void _onFindChanged() {
     if (mounted) setState(() {});
+    // The query/options changing invalidates the viewport highlight scan
+    // too — e.g. Match case toggled, or new text typed (via scheduleRefresh
+    // -> refresh() -> notifyListeners()).
+    _scheduleViewportScan();
   }
 
   /// Propagate the undo-coalescing preference to all open sessions and persist.
@@ -302,6 +307,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     _focusNode.dispose();
     _findController.removeListener(_onFindChanged);
     _findController.dispose();
+    _viewportDebounce?.cancel();
     super.dispose();
   }
 
@@ -811,32 +817,82 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   void _openFind(FindPanelMode mode) {
     final tab = _activeTab;
     if (tab == null || tab.mode != ViewMode.edit) return;
+    _findController.scope = _activeEditor?.selectionScope;
     _findController.attach(tab.session, tab.session.lineCount().toInt());
     _findController.setMode(mode);
     setState(() => _isFindVisible = true);
+    _scheduleViewportScan();
+    // Re-focus the query field even when the panel is already open (its
+    // State isn't recreated, so `initState`'s one-shot focus won't re-run),
+    // so a repeated Ctrl+F always returns focus to it, matching
+    // Notepad++/VS Code.
+    _findPanelKey.currentState?.requestQueryFocus();
   }
 
   void _closeFind() {
-    setState(() => _isFindVisible = false);
+    _viewportDebounce?.cancel();
+    _viewportScanGen++; // invalidate any in-flight scan
+    setState(() {
+      _isFindVisible = false;
+      _viewportMatches = const [];
+    });
     _activeEditor?.focusEditor();
   }
 
-  /// Matches to hand the painter: [_findController.loaded] restricted to rows
-  /// intersecting the editor's current viewport (with a one-screen margin
-  /// either side so a small scroll doesn't pop highlights in and out), so the
-  /// painter never has to walk a document-spanning match list just to draw
-  /// the handful of matches actually on screen.
-  List<MatchSpan> get _visibleFindMatches {
+  // ---- Viewport-scoped highlighting --------------------------------------
+  //
+  // `_findController.loaded` only holds matches from windows already paged
+  // in by stepping (scanning is forward-only from row 0), so it cannot be
+  // used directly to highlight whatever happens to be on screen — a match
+  // 500k rows down, reached only by scrolling, would never be loaded. So the
+  // highlight set is its own independent, viewport-scoped scan straight to
+  // Rust (`findInRows` over just the visible rows), decoupled from the
+  // stepping cursor. Cost is therefore proportional to what's on screen, not
+  // to document size or how far stepping has paged in.
+  List<MatchSpan> _viewportMatches = const [];
+  int _viewportScanGen = 0;
+  Timer? _viewportDebounce;
+
+  void _scheduleViewportScan() {
+    _viewportDebounce?.cancel();
+    _viewportDebounce = Timer(kMatchDebounce, _runViewportScan);
+  }
+
+  Future<void> _runViewportScan() async {
+    final gen = ++_viewportScanGen;
+    if (!_isFindVisible) return;
+    final tab = _activeTab;
     final editor = _activeEditor;
-    if (editor == null) return const [];
-    final loaded = _findController.loaded;
+    final query = _findController.query.text;
+    if (tab == null ||
+        tab.mode != ViewMode.edit ||
+        editor == null ||
+        query.isEmpty ||
+        _findController.regexError != null) {
+      if (mounted && gen == _viewportScanGen) setState(() => _viewportMatches = const []);
+      return;
+    }
     final (first, last) = editor.visibleRowRange;
-    final margin = (last - first).clamp(1, 1000);
-    final lo = first - margin;
-    final hi = last + margin;
-    return loaded
-        .where((m) => m.endRow.toInt() >= lo && m.startRow.toInt() <= hi)
-        .toList();
+    if (first >= last) {
+      if (mounted && gen == _viewportScanGen) setState(() => _viewportMatches = const []);
+      return;
+    }
+    List<MatchSpan> found;
+    try {
+      found = await tab.session.findInRows(
+        query: _findController.currentQuery,
+        fromRow: BigInt.from(first),
+        toRow: BigInt.from(last),
+      );
+    } catch (_) {
+      // A transient scan failure (e.g. an in-progress invalid regex edit)
+      // leaves the previous highlight set rather than flashing it empty.
+      return;
+    }
+    // Discard a result for a superseded scan (query/options/viewport changed
+    // again, or the panel closed, while this scan was in flight).
+    if (gen != _viewportScanGen || !mounted) return;
+    setState(() => _viewportMatches = found);
   }
 
   /// Re-point the panel at the newly active tab. Loaded matches are dropped
@@ -847,11 +903,14 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     final tab = _activeTab;
     if (tab == null || tab.mode != ViewMode.edit) {
       _findController.attach(null, 0);
+      _viewportScanGen++;
+      setState(() => _viewportMatches = const []);
       return;
     }
     _findController.scope = _activeEditor?.selectionScope;
     _findController.attach(tab.session, tab.session.lineCount().toInt());
     _findController.refresh();
+    _scheduleViewportScan();
   }
 
   /// Run a ribbon Edit-menu action against the active editor, then close the
@@ -1173,6 +1232,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                     else if (_activeTab != null && _activeTab!.mode == ViewMode.edit) ...[
                       if (_isFindVisible)
                         FindPanel(
+                          key: _findPanelKey,
                           controller: _findController,
                           onClose: _closeFind,
                           onReveal: (span) => _activeEditor?.revealSpan(span),
@@ -1194,9 +1254,11 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           },
                           // Dirtiness lives in the session; repaint the tab dot.
                           onContentChanged: () => setState(() {}),
-                          matches: _isFindVisible ? _visibleFindMatches : const [],
+                          matches: _isFindVisible ? _viewportMatches : const [],
                           currentMatch:
                               _isFindVisible ? _findController.currentMatch : null,
+                          onViewportChanged:
+                              _isFindVisible ? _scheduleViewportScan : null,
                         ),
                       ),
                     ]

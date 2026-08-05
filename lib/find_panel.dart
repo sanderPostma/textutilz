@@ -20,10 +20,10 @@ class FindPanel extends StatefulWidget {
   });
 
   @override
-  State<FindPanel> createState() => _FindPanelState();
+  State<FindPanel> createState() => FindPanelState();
 }
 
-class _FindPanelState extends State<FindPanel> {
+class FindPanelState extends State<FindPanel> {
   final FocusNode _queryFocus = FocusNode();
 
   FindController get c => widget.controller;
@@ -34,6 +34,11 @@ class _FindPanelState extends State<FindPanel> {
     c.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _queryFocus.requestFocus());
   }
+
+  /// Re-focus the query field. The panel widget isn't recreated when it's
+  /// already open, so `initState`'s one-shot focus doesn't re-run on a
+  /// repeated Ctrl+F — this lets the host ask for it explicitly instead.
+  void requestQueryFocus() => _queryFocus.requestFocus();
 
   @override
   void dispose() {

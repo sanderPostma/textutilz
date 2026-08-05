@@ -113,6 +113,12 @@ class FindController extends ChangeNotifier {
         dotMatchesNewline: dotMatchesNewline,
       );
 
+  /// The query as it would be sent to Rust right now. Exposed so the host
+  /// can run its own independent scans (e.g. viewport-scoped highlighting)
+  /// using the exact same pattern/options without duplicating how they're
+  /// packaged into a [SearchQuery].
+  SearchQuery get currentQuery => _buildQuery();
+
   SpanScope? get _activeScope => inSelection ? scope : null;
 
   /// Discard loaded matches and scan forward from the top until at least one
