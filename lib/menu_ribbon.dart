@@ -321,40 +321,37 @@ class _MenuRibbonState extends State<MenuRibbon> {
     }
   }
 
-  Widget _buildMimePanel(MimeCategory category, bool decode, String title, ColorScheme scheme) {
-    return RibbonPanelScaffold(
-      key: ValueKey('panel-mime-${category.name}-$decode'),
-      title: title,
-      onBack: _closePanel,
-      scheme: scheme,
-      child: SingleMimeToolPanel(
-        enabled: widget.mimeToolsEnabled,
-        hasSelection: widget.mimeHasSelection,
-        category: category,
-        initialDecode: decode,
-        onRun: (op) => widget.onRunMimeOp?.call(op),
-      ),
-    );
+  /// Whether a ribbon entry may be clicked right now.
+  ///
+  /// Entries that open a docked BAR must be disabled when that bar cannot
+  /// render (not Edit mode, or a jwt/hex view is showing): the click would
+  /// otherwise close the ribbon and do nothing visible, and the explanation
+  /// the bar carries ("Open a document in Edit mode to run MIME tools.") would
+  /// never be reachable on exactly the path that needs it.
+  ///
+  /// Keyed on [ToolBar.handles] rather than a hand-written id prefix list —
+  /// the prefix check this replaces covered `edit.*` and silently omitted
+  /// every `mime.*` entry. Panels that stay INSIDE the ribbon ('mime', 'new',
+  /// 'autodelete') render their own disabled explanation and stay clickable.
+  bool _entryEnabled(CommandDescriptor cmd) {
+    final panel = cmd.panelId;
+    if (panel == null || !ToolBar.handles(panel)) return true;
+    return panel.startsWith('mime.')
+        ? widget.mimeToolsEnabled
+        : widget.editToolsEnabled;
   }
 
-  Widget _buildEditPanel(EditCategory category, String title, ColorScheme scheme) {
-    return RibbonPanelScaffold(
-      key: ValueKey('panel-edit-${category.name}'),
-      title: title,
-      onBack: _closePanel,
-      scheme: scheme,
-      child: EditToolsPanel(
-        enabled: widget.editToolsEnabled,
-        category: category,
-        onRun: (op) => widget.onRunEditOp?.call(op),
-      ),
-    );
+  /// The tap handler for a command, or null when it is disabled.
+  VoidCallback? _entryAction(CommandDescriptor cmd) {
+    if (!_entryEnabled(cmd)) return null;
+    return cmd.panelId != null
+        ? () => _openCommandPanel(cmd)
+        : _getAction(cmd.actionId);
   }
 
   List<MenuColumn> get _columns {
     MenuEntry entry(String id) {
       final cmd = _registry.commands.firstWhere((c) => c.id == id);
-      final isEditOp = id.startsWith('edit.case') || id.startsWith('edit.eol') || id.startsWith('edit.blank') || id.startsWith('edit.comment');
       return MenuEntry(
         label: cmd.title,
         icon: _parseIcon(cmd.icon),
@@ -362,11 +359,7 @@ class _MenuRibbonState extends State<MenuRibbon> {
         toggled: cmd.id == 'view.linenumbers' ? widget.showLineNumbers :
                  cmd.id == 'view.wordwrap' ? widget.wordWrap : cmd.toggled,
         command: cmd,
-        onPressed: (isEditOp && !widget.editToolsEnabled)
-          ? null
-          : (cmd.panelId != null 
-              ? () => _openCommandPanel(cmd)
-              : _getAction(cmd.actionId)),
+        onPressed: _entryAction(cmd),
       );
     }
     return [
@@ -503,17 +496,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
             onRun: (op) => widget.onRunMimeOp?.call(op),
           ),
         );
-      case 'mime.base64.encode': return _buildMimePanel(MimeCategory.base64, false, 'Base64 Encode', scheme);
-      case 'mime.base64.decode': return _buildMimePanel(MimeCategory.base64, true, 'Base64 Decode', scheme);
-      case 'mime.qp.encode': return _buildMimePanel(MimeCategory.quotedPrintable, false, 'Quoted-printable Encode', scheme);
-      case 'mime.qp.decode': return _buildMimePanel(MimeCategory.quotedPrintable, true, 'Quoted-printable Decode', scheme);
-      case 'mime.url.encode': return _buildMimePanel(MimeCategory.url, false, 'URL Encode', scheme);
-      case 'mime.url.decode': return _buildMimePanel(MimeCategory.url, true, 'URL Decode', scheme);
-      case 'mime.saml.decode': return _buildMimePanel(MimeCategory.saml, true, 'SAML Decode', scheme);
-      case 'edit.case': return _buildEditPanel(EditCategory.caseConv, 'Convert Case', scheme);
-      case 'edit.eol': return _buildEditPanel(EditCategory.eolConv, 'EOL Conversion', scheme);
-      case 'edit.blank': return _buildEditPanel(EditCategory.blankOps, 'Blank Operations', scheme);
-      case 'edit.comment': return _buildEditPanel(EditCategory.commentOps, 'Comment/Uncomment', scheme);
+      // The 11 mime.*/edit.* panel ids do NOT appear here: _openCommandPanel
+      // hands every id ToolBar.handles() to onOpenToolBar and returns, so
+      // _activeCommand is never set for them. Their titles now live in exactly
+      // one place, ToolBar._editSpecs/_mimeSpecs.
       case 'autodelete':
         return RibbonPanelScaffold(
           key: const ValueKey('panel-autodelete'),
@@ -667,9 +653,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
                       toggled: cmd.id == 'view.linenumbers' ? widget.showLineNumbers :
                                cmd.id == 'view.wordwrap' ? widget.wordWrap : cmd.toggled,
                       command: cmd,
-                      onPressed: cmd.panelId != null 
-                        ? () => _openCommandPanel(cmd)
-                        : _getAction(cmd.actionId),
+                      // Same enablement gate as the menu table: without it the
+                      // search box was a back door to tool bars that cannot
+                      // render.
+                      onPressed: _entryAction(cmd),
                     ),
                     accent: accent,
                     scheme: scheme,
