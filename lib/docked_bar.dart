@@ -10,6 +10,12 @@ import 'package:flutter/material.dart';
 /// tests: the close button is RIGID and must stay reachable at every width;
 /// [child] is given the remaining space and must be able to shrink or wrap
 /// rather than overflow.
+///
+/// Vertically, the close button aligns to [child]'s FIRST row, not the
+/// centre of [child] as a whole. This matters once [child] is a multi-row
+/// `Column` (e.g. the find bar's query row plus its replace row): the button
+/// stays pinned where the first row put it instead of drifting toward the
+/// middle as more rows are added below.
 class DockedBar extends StatelessWidget {
   /// Shown in a rounded tab centered on the bar's top edge. When null no tab
   /// is drawn at all — that is how the find bar keeps its original look.
@@ -36,7 +42,7 @@ class DockedBar extends StatelessWidget {
         children: [
           if (title != null) _titleTab(scheme, title!),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: child),
               _closeButton(),
