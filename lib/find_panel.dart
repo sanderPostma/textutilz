@@ -334,14 +334,6 @@ class FindPanelState extends State<FindPanel> {
     );
   }
 
-  Widget _countButton(bool hasError) => Tooltip(
-    message: 'Count all matches',
-    child: TextButton(
-      onPressed: c.query.text.isEmpty || hasError ? null : c.recount,
-      child: const Text('Count'),
-    ),
-  );
-
   Widget _closeButton() => IconButton(
     icon: const Icon(Icons.close, size: 18),
     tooltip: 'Close (Esc)',
@@ -393,7 +385,6 @@ class FindPanelState extends State<FindPanel> {
         _prevArrow(),
         _nextArrow(),
         _counterLabel(hasError),
-        _countButton(hasError),
         const Spacer(flex: 3),
         _closeButton(),
       ],
@@ -457,6 +448,14 @@ class FindPanelState extends State<FindPanel> {
                       onSubmitted: (_) => _replaceCurrent(),
                     ),
                   ),
+                ),
+                _toggle(
+                  label: 'Aa→',
+                  tooltip: 'Preserve case — re-case each replacement to match '
+                      'the text it replaces (ALL CAPS, Capitalised, lower). '
+                      'Mixed-case matches keep what you typed.',
+                  value: c.preserveCase,
+                  onChanged: (v) => setState(() => c.preserveCase = v),
                 ),
                 Tooltip(
                   message: 'Replace the current match',

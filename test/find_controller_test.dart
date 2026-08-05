@@ -148,6 +148,28 @@ void main() {
     expect(c.session!.line(vrow: BigInt.one), 'X');
   });
 
+  test('replaceAll re-cases each match when preserveCase is on', () async {
+    final c = await controllerOver('traefik TRAEFIK Traefik\n', 'traefik');
+    c.matchCase = false;
+    c.preserveCase = true;
+    await c.refresh();
+    c.replacement.text = 'nginx';
+    final n = await c.replaceAll();
+    expect(n, 3);
+    expect(c.session!.line(vrow: BigInt.zero), 'nginx NGINX Nginx');
+  });
+
+  test('replaceAll writes the replacement verbatim when preserveCase is off',
+      () async {
+    final c = await controllerOver('traefik TRAEFIK Traefik\n', 'traefik');
+    c.matchCase = false;
+    c.preserveCase = false;
+    await c.refresh();
+    c.replacement.text = 'nginx';
+    await c.replaceAll();
+    expect(c.session!.line(vrow: BigInt.zero), 'nginx nginx nginx');
+  });
+
   test('replaceAll honours the in-selection scope', () async {
     final c = await controllerOver('hit\nhit\nhit\n', 'hit');
     c.scope = SpanScope(

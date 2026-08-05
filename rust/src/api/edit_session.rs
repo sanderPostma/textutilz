@@ -747,8 +747,9 @@ impl EditSession {
         query: crate::api::search::SearchQuery,
         span: crate::api::search::MatchSpan,
         replacement: String,
+        preserve_case: bool,
     ) -> anyhow::Result<CaretPos> {
-        let text = self.expand_for_span(&query, &span, &replacement)?;
+        let text = self.expand_for_span(&query, &span, &replacement, preserve_case)?;
         self.begin_group();
         self.delete(span.start_row, span.start_col, span.end_row, span.end_col);
         let caret = self.insert(span.start_row, span.start_col, text);
@@ -787,6 +788,7 @@ impl EditSession {
         query: crate::api::search::SearchQuery,
         replacement: String,
         scope: Option<crate::api::search::SpanScope>,
+        preserve_case: bool,
     ) -> anyhow::Result<usize> {
         use crate::api::search::{SearchQuery, SEARCH_WINDOW_ROWS};
 
@@ -816,7 +818,7 @@ impl EditSession {
         let mut spans = Vec::with_capacity(found.len());
         let mut texts = Vec::with_capacity(found.len());
         for span in found {
-            let text = self.expand_for_span(&query, &span, &replacement)?;
+            let text = self.expand_for_span(&query, &span, &replacement, preserve_case)?;
             let empty_span =
                 (span.start_row, span.start_col) == (span.end_row, span.end_col);
             if empty_span && text.is_empty() {
@@ -847,6 +849,7 @@ impl EditSession {
         query: &crate::api::search::SearchQuery,
         span: &crate::api::search::MatchSpan,
         replacement: &str,
+        preserve_case: bool,
     ) -> anyhow::Result<String> {
         use crate::api::search::{compile, expand_replacement};
 
@@ -872,7 +875,12 @@ impl EditSession {
         let caps = re
             .captures(&matched)
             .ok_or_else(|| anyhow::anyhow!("match text no longer matches the pattern"))?;
-        expand_replacement(&query.mode, &caps, replacement)
+        let expanded = expand_replacement(&query.mode, &caps, replacement)?;
+        Ok(if preserve_case {
+            crate::api::search::apply_case_pattern(&matched, expanded)
+        } else {
+            expanded
+        })
     }
 }
 
@@ -1413,7 +1421,7 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(query("hit"), first, "X".to_string()).unwrap();
+        s.replace_span(query("hit"), first, "X".to_string(), false).unwrap();
         // Trailing "\n" in the fixture makes the file end with a phantom
         // empty line, same as every other doc() assertion in this file.
         assert_eq!(doc(&s), "X hit\n");
@@ -1429,7 +1437,7 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(query("hit"), first, "LONGER".to_string()).unwrap();
+        s.replace_span(query("hit"), first, "LONGER".to_string(), false).unwrap();
         s.undo();
         assert_eq!(doc(&s), "hit hit\n");
     }
@@ -1447,14 +1455,14 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(q, first, "$2:$1".to_string()).unwrap();
+        s.replace_span(q, first, "$2:$1".to_string(), false).unwrap();
         assert_eq!(doc(&s), "host:user\n");
     }
 
     #[test]
     fn replace_all_replaces_every_match() {
         let (mut s, _p) = session("hit\nmiss\nhit\n");
-        let n = s.replace_all_in_rows(query("hit"), "X".to_string(), None).unwrap();
+        let n = s.replace_all_in_rows(query("hit"), "X".to_string(), None, false).unwrap();
         assert_eq!(n, 2);
         assert_eq!(doc(&s), "X\nmiss\nX\n");
     }
@@ -1463,26 +1471,72 @@ mod tests {
     fn replace_all_handles_longer_replacement() {
         // A backwards pass keeps earlier spans valid as later ones grow.
         let (mut s, _p) = session("a a a\n");
-        s.replace_all_in_rows(query("a"), "LONG".to_string(), None).unwrap();
+        s.replace_all_in_rows(query("a"), "LONG".to_string(), None, false).unwrap();
         assert_eq!(doc(&s), "LONG LONG LONG\n");
     }
 
     #[test]
     fn replace_all_handles_shorter_replacement() {
         let (mut s, _p) = session("aaa aaa\n");
-        s.replace_all_in_rows(query("aaa"), "b".to_string(), None).unwrap();
+        s.replace_all_in_rows(query("aaa"), "b".to_string(), None, false).unwrap();
         assert_eq!(doc(&s), "b b\n");
     }
 
     #[test]
     fn replace_all_undoes_and_redoes_as_one_step() {
         let (mut s, _p) = session("hit\nhit\nhit\n");
-        s.replace_all_in_rows(query("hit"), "X".to_string(), None).unwrap();
+        s.replace_all_in_rows(query("hit"), "X".to_string(), None, false).unwrap();
         assert_eq!(doc(&s), "X\nX\nX\n");
         s.undo();
         assert_eq!(doc(&s), "hit\nhit\nhit\n", "one undo must revert all");
         s.redo();
         assert_eq!(doc(&s), "X\nX\nX\n", "one redo must reapply all");
+    }
+
+    #[test]
+    fn replace_all_preserves_case_per_match() {
+        // One document, three casings, one replacement string. Each match
+        // should come back wearing the case it had.
+        let (mut s, _p) = session("traefik TRAEFIK Traefik traefikProxy\n");
+        let mut q = query("traefik");
+        q.match_case = false;
+        let n = s
+            .replace_all_in_rows(q, "nginx".to_string(), None, true)
+            .unwrap();
+        assert_eq!(n, 4);
+        // The mixed-case "traefikProxy" keeps the typed replacement verbatim,
+        // leaving the "Proxy" suffix untouched.
+        assert_eq!(doc(&s), "nginx NGINX Nginx nginxProxy\n");
+    }
+
+    #[test]
+    fn replace_all_without_preserve_case_writes_verbatim() {
+        let (mut s, _p) = session("traefik TRAEFIK Traefik\n");
+        let mut q = query("traefik");
+        q.match_case = false;
+        s.replace_all_in_rows(q, "nginx".to_string(), None, false)
+            .unwrap();
+        assert_eq!(doc(&s), "nginx nginx nginx\n");
+    }
+
+    #[test]
+    fn replace_span_preserves_case_for_one_match() {
+        let (mut s, _p) = session("TRAEFIK here\n");
+        let mut q = query("traefik");
+        q.match_case = false;
+        let spans = {
+            let mut q2 = query("traefik");
+            q2.match_case = false;
+            s.find_in_rows(q2, 0, 10, None).unwrap()
+        };
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        s.replace_span(q, first, "nginx".to_string(), true).unwrap();
+        assert_eq!(doc(&s), "NGINX here\n");
     }
 
     #[test]
@@ -1495,7 +1549,7 @@ mod tests {
             end_col: 3,
         };
         let n = s
-            .replace_all_in_rows(query("hit"), "X".to_string(), Some(scope))
+            .replace_all_in_rows(query("hit"), "X".to_string(), Some(scope), false)
             .unwrap();
         assert_eq!(n, 2);
         assert_eq!(doc(&s), "hit\nX\nX\n");
@@ -1504,7 +1558,7 @@ mod tests {
     #[test]
     fn replace_all_with_no_match_makes_no_undo_entry() {
         let (mut s, _p) = session("alpha\n");
-        let n = s.replace_all_in_rows(query("zzz"), "X".to_string(), None).unwrap();
+        let n = s.replace_all_in_rows(query("zzz"), "X".to_string(), None, false).unwrap();
         assert_eq!(n, 0);
         assert!(!s.can_undo(), "a no-op replace must not push an undo step");
     }
@@ -1513,7 +1567,7 @@ mod tests {
     fn replace_all_terminates_on_zero_length_match() {
         let (mut s, _p) = session("ab\n");
         let n = s
-            .replace_all_in_rows(regex_query("x*", false), "".to_string(), None)
+            .replace_all_in_rows(regex_query("x*", false), "".to_string(), None, false)
             .unwrap();
         // `x*` matches empty at every position and the replacement is empty,
         // so nothing is written. Reporting a count, or recording no-op
@@ -1533,7 +1587,7 @@ mod tests {
         // empty too: inserting text at every position is a real edit.
         let (mut s, _p) = session("ab\n");
         let n = s
-            .replace_all_in_rows(regex_query("x*", false), "-".to_string(), None)
+            .replace_all_in_rows(regex_query("x*", false), "-".to_string(), None, false)
             .unwrap();
         assert_eq!(n, 4);
         assert_eq!(doc(&s), "-a-b-\n-");
@@ -1665,7 +1719,7 @@ mod tests {
             end_col: spans[0].end_col,
         };
         assert_eq!((first.start_row, first.end_row), (0, 1));
-        s.replace_span(q, first, "$2-$1".to_string()).unwrap();
+        s.replace_span(q, first, "$2-$1".to_string(), false).unwrap();
         assert_eq!(doc(&s), "beta-alpha\ngamma\n");
     }
 
@@ -1689,7 +1743,7 @@ mod tests {
         // "beta" ends at column 4 on row 1 (before that row's trailing emoji).
         assert_eq!((first.start_row, first.start_col), (0, 2));
         assert_eq!((first.end_row, first.end_col), (1, 4));
-        s.replace_span(q, first, "$2-$1".to_string()).unwrap();
+        s.replace_span(q, first, "$2-$1".to_string(), false).unwrap();
         assert_eq!(doc(&s), "😀beta-alpha😀\ntail\n");
     }
 }

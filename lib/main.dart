@@ -30,6 +30,10 @@ Future<void> main() async {
 
   WindowOptions windowOptions = const WindowOptions(
     size: Size(800, 600),
+    // The find/replace panel's controls stop fitting below ~800px, so the
+    // window refuses to go narrower rather than degrading into a scrolling
+    // toggle cluster. Height is left free.
+    minimumSize: Size(800, 400),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,

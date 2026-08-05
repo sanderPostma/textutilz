@@ -166,6 +166,58 @@ pub fn expand_replacement(
     }
 }
 
+/// Re-case `replacement` to follow the case pattern of the text it replaces,
+/// the way Notepad++ and IntelliJ's "Preserve case" option does.
+///
+/// Only three patterns are recognised, and only when `matched` actually carries
+/// case information:
+///
+/// - ALL UPPERCASE (needs at least two cased characters, so a one-letter match
+///   like "I" is not treated as a shout) -> replacement uppercased
+/// - Capitalised (first cased char upper, every later cased char lower)
+///   -> replacement capitalised
+/// - all lowercase -> replacement lowercased
+///
+/// Anything else — mixed case like "traefikProxy", or text with no cased
+/// characters at all — is left exactly as the user typed it. Guessing at
+/// arbitrary mixed case does more harm than leaving it alone.
+#[flutter_rust_bridge::frb(ignore)]
+pub fn apply_case_pattern(matched: &str, replacement: String) -> String {
+    let cased: Vec<char> = matched.chars().filter(|c| c.is_alphabetic()).collect();
+    if cased.is_empty() {
+        return replacement;
+    }
+
+    let all_upper = cased.len() >= 2 && cased.iter().all(|c| c.is_uppercase());
+    if all_upper {
+        return replacement.to_uppercase();
+    }
+
+    let all_lower = cased.iter().all(|c| c.is_lowercase());
+    if all_lower {
+        return replacement.to_lowercase();
+    }
+
+    // Capitalised: first cased char upper, the rest lower.
+    if cased[0].is_uppercase() && cased[1..].iter().all(|c| c.is_lowercase()) {
+        let mut out = String::with_capacity(replacement.len());
+        let mut seen_alpha = false;
+        for ch in replacement.chars() {
+            if !seen_alpha && ch.is_alphabetic() {
+                seen_alpha = true;
+                out.extend(ch.to_uppercase());
+            } else if seen_alpha {
+                out.extend(ch.to_lowercase());
+            } else {
+                out.push(ch);
+            }
+        }
+        return out;
+    }
+
+    replacement
+}
+
 /// Cheap validity check for the panel to call on every keystroke. Returns the
 /// error message when the query cannot compile, or None when it is usable.
 #[flutter_rust_bridge::frb(sync)]
@@ -300,5 +352,59 @@ mod tests {
         assert!(validate_query(q("a(", SearchMode::Regex)).is_some());
         assert!(validate_query(q("a(", SearchMode::Normal)).is_none());
         assert!(validate_query(q("abc", SearchMode::Regex)).is_none());
+    }
+
+    fn recase(matched: &str, replacement: &str) -> String {
+        apply_case_pattern(matched, replacement.to_string())
+    }
+
+    #[test]
+    fn preserve_case_matches_all_uppercase() {
+        assert_eq!(recase("TRAEFIK", "nginx"), "NGINX");
+        assert_eq!(recase("TRAEFIK", "NgInX"), "NGINX");
+    }
+
+    #[test]
+    fn preserve_case_matches_all_lowercase() {
+        assert_eq!(recase("traefik", "NGINX"), "nginx");
+    }
+
+    #[test]
+    fn preserve_case_matches_capitalised() {
+        assert_eq!(recase("Traefik", "nginx"), "Nginx");
+        assert_eq!(recase("Traefik", "NGINX"), "Nginx");
+    }
+
+    #[test]
+    fn preserve_case_capitalises_past_leading_punctuation() {
+        // The first *alphabetic* char is the one to upper, not the first char.
+        assert_eq!(recase("Traefik", "-nginx"), "-Nginx");
+    }
+
+    #[test]
+    fn preserve_case_leaves_mixed_case_alone() {
+        // "traefikProxy" is neither all-upper, all-lower nor capitalised —
+        // guessing would mangle it, so the typed replacement wins.
+        assert_eq!(recase("traefikProxy", "nginxServer"), "nginxServer");
+        assert_eq!(recase("tRaEfIk", "nginx"), "nginx");
+    }
+
+    #[test]
+    fn preserve_case_leaves_uncased_matches_alone() {
+        assert_eq!(recase("1234", "nginx"), "nginx");
+        assert_eq!(recase("", "NgInX"), "NgInX");
+    }
+
+    #[test]
+    fn preserve_case_does_not_shout_for_a_single_letter() {
+        // A lone "I" is capitalised, not uppercase — upcasing the whole
+        // replacement off one character is the wrong call.
+        assert_eq!(recase("I", "you"), "You");
+    }
+
+    #[test]
+    fn preserve_case_handles_non_ascii() {
+        assert_eq!(recase("ÉCOLE", "schule"), "SCHULE");
+        assert_eq!(recase("École", "schule"), "Schule");
     }
 }

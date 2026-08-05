@@ -35,6 +35,12 @@ class FindController extends ChangeNotifier {
   bool inSelection = false;
   bool dotMatchesNewline = false;
 
+  /// Re-case each replacement to follow the case of the text it replaces
+  /// (ALL CAPS -> ALL CAPS, Capitalised -> Capitalised, lower -> lower).
+  /// Mixed-case matches keep the typed replacement verbatim. Rust owns the
+  /// rule; this is only the toggle.
+  bool preserveCase = false;
+
   /// Limits the search when [inSelection] is on. Set by the host from the
   /// editor's current selection.
   SpanScope? scope;
@@ -414,6 +420,7 @@ class FindController extends ChangeNotifier {
       query: _buildQuery(),
       span: span,
       replacement: replacement.text,
+      preserveCase: preserveCase,
     );
     _lineCount = _session!.lineCount().toInt();
     // Anchor past the text just written, so the next match is the one after
@@ -432,6 +439,7 @@ class FindController extends ChangeNotifier {
       query: _buildQuery(),
       replacement: replacement.text,
       scope: activeScope,
+      preserveCase: preserveCase,
     );
     _lineCount = _session!.lineCount().toInt();
     await refresh();

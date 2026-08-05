@@ -189,6 +189,7 @@ abstract class RustLibApi extends BaseApi {
     required SearchQuery query,
     required String replacement,
     SpanScope? scope,
+    required bool preserveCase,
   });
 
   Future<CaretPos> crateApiEditSessionEditSessionReplaceSpan({
@@ -196,6 +197,7 @@ abstract class RustLibApi extends BaseApi {
     required SearchQuery query,
     required MatchSpan span,
     required String replacement,
+    required bool preserveCase,
   });
 
   void crateApiEditSessionEditSessionSave({required EditSession that});
@@ -1309,6 +1311,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required SearchQuery query,
     required String replacement,
     SpanScope? scope,
+    required bool preserveCase,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1321,6 +1324,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_box_autoadd_search_query(query, serializer);
           sse_encode_String(replacement, serializer);
           sse_encode_opt_box_autoadd_span_scope(scope, serializer);
+          sse_encode_bool(preserveCase, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1333,7 +1337,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiEditSessionEditSessionReplaceAllInRowsConstMeta,
-        argValues: [that, query, replacement, scope],
+        argValues: [that, query, replacement, scope, preserveCase],
         apiImpl: this,
       ),
     );
@@ -1342,7 +1346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiEditSessionEditSessionReplaceAllInRowsConstMeta =>
       const TaskConstMeta(
         debugName: "EditSession_replace_all_in_rows",
-        argNames: ["that", "query", "replacement", "scope"],
+        argNames: ["that", "query", "replacement", "scope", "preserveCase"],
       );
 
   @override
@@ -1351,6 +1355,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required SearchQuery query,
     required MatchSpan span,
     required String replacement,
+    required bool preserveCase,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1363,6 +1368,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_box_autoadd_search_query(query, serializer);
           sse_encode_box_autoadd_match_span(span, serializer);
           sse_encode_String(replacement, serializer);
+          sse_encode_bool(preserveCase, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1375,7 +1381,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiEditSessionEditSessionReplaceSpanConstMeta,
-        argValues: [that, query, span, replacement],
+        argValues: [that, query, span, replacement, preserveCase],
         apiImpl: this,
       ),
     );
@@ -1384,7 +1390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiEditSessionEditSessionReplaceSpanConstMeta =>
       const TaskConstMeta(
         debugName: "EditSession_replace_span",
-        argNames: ["that", "query", "span", "replacement"],
+        argNames: ["that", "query", "span", "replacement", "preserveCase"],
       );
 
   @override
@@ -5629,11 +5635,13 @@ class EditSessionImpl extends RustOpaque implements EditSession {
     required SearchQuery query,
     required String replacement,
     SpanScope? scope,
+    required bool preserveCase,
   }) => RustLib.instance.api.crateApiEditSessionEditSessionReplaceAllInRows(
     that: this,
     query: query,
     replacement: replacement,
     scope: scope,
+    preserveCase: preserveCase,
   );
 
   /// Replace one match. `query` is needed so capture references in
@@ -5642,11 +5650,13 @@ class EditSessionImpl extends RustOpaque implements EditSession {
     required SearchQuery query,
     required MatchSpan span,
     required String replacement,
+    required bool preserveCase,
   }) => RustLib.instance.api.crateApiEditSessionEditSessionReplaceSpan(
     that: this,
     query: query,
     span: span,
     replacement: replacement,
+    preserveCase: preserveCase,
   );
 
   void save() =>

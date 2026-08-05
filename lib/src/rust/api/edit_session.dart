@@ -118,6 +118,7 @@ abstract class EditSession implements RustOpaqueInterface {
     required SearchQuery query,
     required String replacement,
     SpanScope? scope,
+    required bool preserveCase,
   });
 
   /// Replace one match. `query` is needed so capture references in
@@ -126,6 +127,7 @@ abstract class EditSession implements RustOpaqueInterface {
     required SearchQuery query,
     required MatchSpan span,
     required String replacement,
+    required bool preserveCase,
   });
 
   void save();

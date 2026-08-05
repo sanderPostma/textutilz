@@ -1292,6 +1292,7 @@ fn wire__crate__api__edit_session__EditSession_replace_all_in_rows_impl(
             let api_query = <crate::api::search::SearchQuery>::sse_decode(&mut deserializer);
             let api_replacement = <String>::sse_decode(&mut deserializer);
             let api_scope = <Option<crate::api::search::SpanScope>>::sse_decode(&mut deserializer);
+            let api_preserve_case = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -1315,6 +1316,7 @@ fn wire__crate__api__edit_session__EditSession_replace_all_in_rows_impl(
                             api_query,
                             api_replacement,
                             api_scope,
+                            api_preserve_case,
                         )?;
                         Ok(output_ok)
                     })(),
@@ -1351,6 +1353,7 @@ fn wire__crate__api__edit_session__EditSession_replace_span_impl(
             let api_query = <crate::api::search::SearchQuery>::sse_decode(&mut deserializer);
             let api_span = <crate::api::search::MatchSpan>::sse_decode(&mut deserializer);
             let api_replacement = <String>::sse_decode(&mut deserializer);
+            let api_preserve_case = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -1374,6 +1377,7 @@ fn wire__crate__api__edit_session__EditSession_replace_span_impl(
                             api_query,
                             api_span,
                             api_replacement,
+                            api_preserve_case,
                         )?;
                         Ok(output_ok)
                     })(),

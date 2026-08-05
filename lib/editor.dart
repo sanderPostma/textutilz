@@ -1506,8 +1506,13 @@ class EditorPainter extends CustomPainter {
     this.gutterFg = const Color(0x80FFFFFF),
     this.matches = const [],
     this.currentMatch,
-    this.matchColor = const Color(0x40FFD54F),
-    this.currentMatchColor = const Color(0x80FF9800),
+    // The hex editor's modified-byte yellow (0xFFFFF9BD), carried over for
+    // visual consistency. It is opaque there because that view also flips the
+    // text to dark; here highlights sit under the editor's normal light-on-dark
+    // text, so it runs at ~44% alpha — enough to read as yellow rather than the
+    // muted grey-green the old 25% amber produced, while keeping text legible.
+    this.matchColor = const Color(0x70FFF9BD),
+    this.currentMatchColor = const Color(0xB3FFA726),
   });
 
   @override
@@ -1523,7 +1528,11 @@ class EditorPainter extends CustomPainter {
     final int visibleRowCount = (size.height / rowHeight).ceil() + 1;
     final int lastVisibleRow = (firstVisibleRow + visibleRowCount).clamp(0, visualLineCount);
     
-    // Match highlights sit under the selection and the text.
+    // Match highlights are painted AFTER the selection (see below), not before.
+    // `revealSpan` selects the current match, and the selection layer is a 40%
+    // blue wash — drawing highlights underneath it turned the current match
+    // grey-green until the user clicked into the editor and cleared the
+    // selection. Highlights still sit under the text, so both stay legible.
     void paintSpan(MatchSpan span, Color color) {
       final paint = Paint()..color = color;
       final startRow = span.startRow.toInt();
@@ -1543,12 +1552,6 @@ class EditorPainter extends CustomPainter {
       }
     }
 
-    for (final m in matches) {
-      paintSpan(m, matchColor);
-    }
-    if (currentMatch != null) {
-      paintSpan(currentMatch!, currentMatchColor);
-    }
 
     // Draw selection first so text renders on top
     if (multiSelections != null && multiSelections!.isNotEmpty) {
@@ -1612,6 +1615,16 @@ class EditorPainter extends CustomPainter {
           canvas.drawRect(Rect.fromLTRB(startX, y, endX, y + rowHeight), selPaint);
         }
       }
+    }
+
+    // Find highlights go on top of the selection wash so the current match
+    // stays readable as "current" while the panel still holds focus, then the
+    // text is drawn over both.
+    for (final m in matches) {
+      paintSpan(m, matchColor);
+    }
+    if (currentMatch != null) {
+      paintSpan(currentMatch!, currentMatchColor);
     }
 
     final TextPainter textPainter = TextPainter(

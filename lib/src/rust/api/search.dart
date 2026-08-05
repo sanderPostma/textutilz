@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `compile`, `expand_replacement`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `apply_case_pattern`, `compile`, `expand_replacement`
 
 /// Expand `\n \r \t \0 \\ \xHH \uXXXX`. An unrecognized escape is an error
 /// rather than a silent literal, so a typo surfaces in the panel.
