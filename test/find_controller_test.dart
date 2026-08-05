@@ -148,6 +148,31 @@ void main() {
     expect(c.session!.line(vrow: BigInt.one), 'X');
   });
 
+  test('replaceAll honours the in-selection scope', () async {
+    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+    c.scope = SpanScope(
+      startRow: BigInt.one,
+      startCol: BigInt.zero,
+      endRow: BigInt.two,
+      endCol: BigInt.from(3),
+    );
+    c.inSelection = true;
+    await c.refresh();
+    c.replacement.text = 'X';
+    final n = await c.replaceAll();
+    expect(n, 2);
+    expect(c.session!.line(vrow: BigInt.zero), 'hit',
+        reason: 'outside the selection must be untouched');
+  });
+
+  test('replaceCurrent advances so repeated calls walk the document', () async {
+    final c = await controllerOver('hit hit\n', 'hit');
+    c.replacement.text = 'X';
+    await c.replaceCurrent();
+    await c.replaceCurrent();
+    expect(c.session!.line(vrow: BigInt.zero), 'X X');
+  });
+
   test('recount resolves the exact total', () async {
     final c = await controllerOver('hit\nhit\nhit\n', 'hit');
     final total = await c.recount();

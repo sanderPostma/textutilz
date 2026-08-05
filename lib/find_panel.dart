@@ -32,7 +32,9 @@ class FindPanelState extends State<FindPanel> {
   void initState() {
     super.initState();
     c.addListener(_onControllerChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _queryFocus.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _queryFocus.requestFocus(),
+    );
   }
 
   /// Re-focus the query field. The panel widget isn't recreated when it's
@@ -60,6 +62,16 @@ class FindPanelState extends State<FindPanel> {
 
   Future<void> _next() async => c.stepForward();
   Future<void> _prev() async => c.stepBackward();
+
+  Future<void> _replaceCurrent() async => c.replaceCurrent();
+
+  Future<void> _replaceAll() async {
+    final n = await c.replaceAll();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(n == 1 ? '1 replacement' : '$n replacements')),
+    );
+  }
 
   /// A compact inline option toggle. Every one carries a tooltip naming the
   /// option and its Notepad++ equivalent.
@@ -128,115 +140,183 @@ class FindPanelState extends State<FindPanel> {
     return Container(
       color: scheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.search, size: 16),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 260,
-            child: Tooltip(
-              message: c.regexError ?? 'Find what',
-              child: TextField(
-                controller: c.query,
-                focusNode: _queryFocus,
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Find what…',
-                  border: const OutlineInputBorder(),
-                  enabledBorder: hasError
-                      ? OutlineInputBorder(
-                          borderSide: BorderSide(color: scheme.error))
-                      : null,
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              const Icon(Icons.search, size: 16),
+              Tooltip(
+                message: c.mode == FindPanelMode.find
+                    ? 'Switch to Replace'
+                    : 'Switch to Find',
+                child: IconButton(
+                  icon: Icon(
+                    c.mode == FindPanelMode.find
+                        ? Icons.keyboard_arrow_right
+                        : Icons.keyboard_arrow_down,
+                    size: 16,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => c.setMode(
+                    c.mode == FindPanelMode.find
+                        ? FindPanelMode.replace
+                        : FindPanelMode.find,
+                  ),
                 ),
-                onChanged: (_) => c.scheduleRefresh(),
-                onSubmitted: (_) => _next(),
               ),
+              SizedBox(
+                width: 260,
+                child: Tooltip(
+                  message: c.regexError ?? 'Find what',
+                  child: TextField(
+                    controller: c.query,
+                    focusNode: _queryFocus,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'Find what…',
+                      border: const OutlineInputBorder(),
+                      enabledBorder: hasError
+                          ? OutlineInputBorder(
+                              borderSide: BorderSide(color: scheme.error),
+                            )
+                          : null,
+                    ),
+                    onChanged: (_) => c.scheduleRefresh(),
+                    onSubmitted: (_) => _next(),
+                  ),
+                ),
+              ),
+              _toggle(
+                label: 'Aa',
+                tooltip: 'Match case',
+                value: c.matchCase,
+                onChanged: (v) {
+                  setState(() => c.matchCase = v);
+                  c.scheduleRefresh();
+                },
+              ),
+              _toggle(
+                label: 'ab|',
+                tooltip: 'Match whole word only',
+                value: c.wholeWord,
+                onChanged: (v) {
+                  setState(() => c.wholeWord = v);
+                  c.scheduleRefresh();
+                },
+              ),
+              _toggle(
+                label: '↺',
+                tooltip: 'Wrap around',
+                value: c.wrapAround,
+                onChanged: (v) => setState(() => c.wrapAround = v),
+              ),
+              _toggle(
+                label: '⌗',
+                tooltip: 'In selection',
+                value: c.inSelection,
+                enabled: c.scope != null,
+                onChanged: (v) {
+                  setState(() => c.inSelection = v);
+                  c.scheduleRefresh();
+                },
+              ),
+              _toggle(
+                label: '. *',
+                tooltip: '. matches newline (regex mode only)',
+                value: c.dotMatchesNewline,
+                enabled: c.searchMode == SearchMode.regex,
+                onChanged: (v) {
+                  setState(() => c.dotMatchesNewline = v);
+                  c.scheduleRefresh();
+                },
+              ),
+              _searchModeSelector(),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_up, size: 18),
+                tooltip: 'Previous match (Shift+F3)',
+                onPressed: c.canStepBackward ? _prev : null,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+                tooltip: 'Next match (F3)',
+                onPressed: c.canStepForward ? _next : null,
+                visualDensity: VisualDensity.compact,
+              ),
+              Text(
+                c.counterLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: hasError ? scheme.error : scheme.onSurfaceVariant,
+                ),
+              ),
+              Tooltip(
+                message: 'Count all matches',
+                child: TextButton(
+                  onPressed: c.query.text.isEmpty || hasError
+                      ? null
+                      : c.recount,
+                  child: const Text('Count'),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Close (Esc)',
+                onPressed: widget.onClose,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          if (c.mode == FindPanelMode.replace)
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                const SizedBox(width: 22),
+                SizedBox(
+                  width: 260,
+                  child: Tooltip(
+                    message: 'Replace with',
+                    child: TextField(
+                      controller: c.replacement,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Replace with…',
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _replaceCurrent(),
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Replace the current match',
+                  child: TextButton(
+                    onPressed: c.currentMatch != null ? _replaceCurrent : null,
+                    child: const Text('Replace'),
+                  ),
+                ),
+                Tooltip(
+                  message: c.inSelection
+                      ? 'Replace every match within the selection'
+                      : 'Replace every match in the document',
+                  child: TextButton(
+                    onPressed: c.loaded.isNotEmpty ? _replaceAll : null,
+                    child: Text(
+                      c.inSelection
+                          ? 'Replace All in selection'
+                          : 'Replace All',
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 6),
-          _toggle(
-            label: 'Aa',
-            tooltip: 'Match case',
-            value: c.matchCase,
-            onChanged: (v) {
-              setState(() => c.matchCase = v);
-              c.scheduleRefresh();
-            },
-          ),
-          _toggle(
-            label: 'ab|',
-            tooltip: 'Match whole word only',
-            value: c.wholeWord,
-            onChanged: (v) {
-              setState(() => c.wholeWord = v);
-              c.scheduleRefresh();
-            },
-          ),
-          _toggle(
-            label: '↺',
-            tooltip: 'Wrap around',
-            value: c.wrapAround,
-            onChanged: (v) => setState(() => c.wrapAround = v),
-          ),
-          _toggle(
-            label: '⌗',
-            tooltip: 'In selection',
-            value: c.inSelection,
-            enabled: c.scope != null,
-            onChanged: (v) {
-              setState(() => c.inSelection = v);
-              c.scheduleRefresh();
-            },
-          ),
-          _toggle(
-            label: '. *',
-            tooltip: '. matches newline (regex mode only)',
-            value: c.dotMatchesNewline,
-            enabled: c.searchMode == SearchMode.regex,
-            onChanged: (v) {
-              setState(() => c.dotMatchesNewline = v);
-              c.scheduleRefresh();
-            },
-          ),
-          const SizedBox(width: 6),
-          _searchModeSelector(),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-            tooltip: 'Previous match (Shift+F3)',
-            onPressed: c.canStepBackward ? _prev : null,
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-            tooltip: 'Next match (F3)',
-            onPressed: c.canStepForward ? _next : null,
-            visualDensity: VisualDensity.compact,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            c.counterLabel,
-            style: TextStyle(
-              fontSize: 12,
-              color: hasError ? scheme.error : scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: 'Count all matches',
-            child: TextButton(
-              onPressed: c.query.text.isEmpty || hasError ? null : c.recount,
-              child: const Text('Count'),
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            tooltip: 'Close (Esc)',
-            onPressed: widget.onClose,
-            visualDensity: VisualDensity.compact,
-          ),
         ],
       ),
     );
