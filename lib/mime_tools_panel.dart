@@ -448,7 +448,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
           widget.enabled
               ? (widget.hasSelection
                   ? 'Transforms the selection.'
-                  : 'Transforms the whole document.')
+                  : '⚠️ Transforms the whole document.')
               : 'Open a document in Edit mode to run MIME tools.',
           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),

@@ -96,7 +96,7 @@ void main() {
   testWidgets('mime bar explains it transforms the document when enabled with no selection',
       (tester) async {
     await tester.pumpWidget(mimeHost(enabled: true, hasSelection: false));
-    expect(find.text('Transforms the whole document.'), findsOneWidget);
+    expect(find.text('⚠️ Transforms the whole document.'), findsOneWidget);
   });
 
   testWidgets('mime bar explains why it is disabled', (tester) async {
