@@ -1286,24 +1286,6 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
               children: [
                 Column(
                   children: [
-                    if (_isFindVisible && _barsMayShow)
-                      FindPanel(
-                        key: _findPanelKey,
-                        controller: _findController,
-                        onClose: _closeFind,
-                        onReveal: (span) => _activeEditor?.revealSpan(span),
-                      ),
-                    if (_activeToolPanelId != null && _barsMayShow)
-                      ToolBar(
-                        panelId: _activeToolPanelId!,
-                        editToolsEnabled: _activeEditor != null,
-                        mimeToolsEnabled: _activeEditor != null,
-                        mimeHasSelection:
-                            _activeEditor?.hasLinearSelection ?? false,
-                        onRunEditOp: _runEditOp,
-                        onRunMimeOp: _runMimeOp,
-                        onClose: _closeToolBar,
-                      ),
                     if (_tabs.isNotEmpty)
                       Container(
                         height: 36,
@@ -1356,6 +1338,27 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             );
                           },
                         ),
+                      ),
+                    // The bars sit below the document tabs so the tab bar stays
+                    // adjacent to the window chrome; the title tab therefore
+                    // hangs from the file tabs rather than from the chrome.
+                    if (_isFindVisible && _barsMayShow)
+                      FindPanel(
+                        key: _findPanelKey,
+                        controller: _findController,
+                        onClose: _closeFind,
+                        onReveal: (span) => _activeEditor?.revealSpan(span),
+                      ),
+                    if (_activeToolPanelId != null && _barsMayShow)
+                      ToolBar(
+                        panelId: _activeToolPanelId!,
+                        editToolsEnabled: _activeEditor != null,
+                        mimeToolsEnabled: _activeEditor != null,
+                        mimeHasSelection:
+                            _activeEditor?.hasLinearSelection ?? false,
+                        onRunEditOp: _runEditOp,
+                        onRunMimeOp: _runMimeOp,
+                        onClose: _closeToolBar,
                       ),
                     if (_activeTab != null && _activeTab!.activeTool?.startsWith('jwt') == true)
                       Expanded(

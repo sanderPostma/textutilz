@@ -121,26 +121,27 @@ adopts `DockedBar` for the chrome but passes no title, so no tab appears. Giving
 find a "Find"/"Replace" tab later is a one-argument change; it is out of scope
 here because it was not asked for.
 
-### Placement — above the document tab bar
+### Placement — below the document tab bar
 
-Both bars dock **between the window chrome and the document tab bar**, not
-between the tab bar and the editor:
+Both bars dock **between the document tab bar and the editor**:
 
 ```
 ┌───────────────────────────────────────┐
 │ ☰  Read | Tail | ✓Edit        ☀ ─ □ │  window chrome
-├────────╭─ Comment/Uncomment ─╮────────┤  ← the tab hangs from the chrome
-│ [Toggle] [Block Comment] [Block Unc] ✕│  tool bar
 ├───────────────────────────────────────┤
 │ notes.txt │ main.rs │                 │  document tabs
+├────────╭─ Comment/Uncomment ─╮────────┤  ← the tab hangs from the tab bar
+│ [Toggle] [Block Comment] [Block Unc] ✕│  tool bar
 ├───────────────────────────────────────┤
 │ 1  the document…                      │  editor
 └───────────────────────────────────────┘
 ```
 
-The title tab must hang from the window chrome to read correctly. Docked below
-the document tab bar it would appear to dangle off the file tabs, which looks
-like a rendering bug rather than a design.
+Revised after seeing it rendered. This spec originally placed the bars above
+the document tabs, on the theory that a title tab hanging off the file tabs
+would read as a rendering bug. Built both ways, it does not: what actually
+jars is the document tab bar being pushed away from the window chrome it
+belongs to. The user chose this order with both in front of them.
 
 **The find bar moves up with it.** The two bars occupy the same slot — they are
 mutually exclusive, they share `DockedBar`, and leaving one above the tabs and
