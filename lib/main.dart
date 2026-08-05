@@ -865,7 +865,13 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     }
     _findController.setMode(mode);
     _activeToolPanelId = null;
-    setState(() => _isFindVisible = true);
+    setState(() {
+      _isFindVisible = true;
+      // The ribbon is Positioned(top: 0) in the same Stack and the bars are
+      // the Column's first children, so leaving it open would park the query
+      // field underneath it. _openToolBar closes it for the same reason.
+      _isRibbonVisible = false;
+    });
     _scheduleViewportScan();
     // Re-focus the query field even when the panel is already open (its
     // State isn't recreated, so `initState`'s one-shot focus won't re-run),
@@ -886,12 +892,39 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   }
 
   /// Dock a tool bar, closing the find bar. Only one bar shows at a time.
+  ///
+  /// Refuses when the bars cannot render for the active tab. Storing an id
+  /// that `_barsMayShow` then suppresses made the click a silent no-op AND
+  /// left the id behind, so switching that tab to Edit later made the bar
+  /// appear unbidden. The ribbon entries are disabled on this path too (see
+  /// `_entryEnabled` in menu_ribbon.dart); this is the backstop.
   void _openToolBar(String panelId) {
+    if (!_barsMayShow) return;
     setState(() {
       _isRibbonVisible = false;
       _isFindVisible = false;
       _activeToolPanelId = panelId;
     });
+  }
+
+  /// Last known "the active editor has a linear selection" value.
+  ///
+  /// The docked MIME bar's marker ("Transforms the selection." vs
+  /// "⚠️ Transforms the whole document.") is read from the editor during
+  /// build, but selecting text only wrote the status-bar ValueNotifier — the
+  /// host never rebuilt, so the marker stayed stale in both directions.
+  ///
+  /// This field exists ONLY to detect the change: the build sites still read
+  /// the editor live, so what they render is always current. Keeping the
+  /// comparison here means the caret moving (which fires constantly) rebuilds
+  /// nothing unless the boolean actually flipped.
+  bool _hasLinearSelection = false;
+
+  void _syncSelectionMarker() {
+    final has = _activeEditor?.hasLinearSelection ?? false;
+    if (has != _hasLinearSelection) {
+      setState(() => _hasLinearSelection = has);
+    }
   }
 
   void _closeToolBar() {
@@ -985,6 +1018,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// matching Notepad++.
   void _retargetFind() {
     final tab = _activeTab;
+    // The change-detector below is per-host, not per-tab, so a tab switch has
+    // to re-read it or the first selection in the new tab can match the stale
+    // value and skip the rebuild. The new editor's State doesn't exist yet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncSelectionMarker();
+    });
     if (_activeToolPanelId != null &&
         (tab == null || tab.mode != ViewMode.edit)) {
       setState(() => _activeToolPanelId = null);
@@ -1170,6 +1209,10 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                               });
                             }
                           });
+                          // Leaving Edit mode must drop any docked bar, the
+                          // same as switching tabs does — otherwise the id
+                          // lingers and the bar reappears on the way back.
+                          _retargetFind();
                           _persistSession();
                         }
                       },
@@ -1358,6 +1401,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                               selChars: selChars,
                               selLines: selLines,
                             );
+                            // Gated on the boolean actually flipping; this
+                            // fires on every caret move.
+                            _syncSelectionMarker();
                           },
                           // Dirtiness lives in the session; repaint the tab dot.
                           // Editing also moves every match after the caret, so
