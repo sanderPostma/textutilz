@@ -93,6 +93,8 @@ class CustomEditorState extends State<CustomEditor> {
     LogicalKeyboardKey.keyO,
     LogicalKeyboardKey.keyW,
     LogicalKeyboardKey.keyN,
+    LogicalKeyboardKey.keyF,
+    LogicalKeyboardKey.keyH,
   };
 
   final ScrollController _vScroll = ScrollController();

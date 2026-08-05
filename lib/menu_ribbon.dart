@@ -123,6 +123,10 @@ class MenuRibbon extends StatefulWidget {
   final VoidCallback? onCopyFileName;
   final VoidCallback? onCopyFilePath;
 
+  /// Open the find/replace panel in Find or Replace mode.
+  final VoidCallback? onFind;
+  final VoidCallback? onReplace;
+
   /// The active tab's current auto-delete policy (for the Auto-delete panel's
   /// selected radio), and the setter invoked when the user picks one.
   final AutoDelete? currentAutoDelete;
@@ -159,6 +163,8 @@ class MenuRibbon extends StatefulWidget {
     this.onCloseTabsToRight,
     this.onCopyFileName,
     this.onCopyFilePath,
+    this.onFind,
+    this.onReplace,
     this.currentAutoDelete,
     this.onSetAutoDelete,
   });
@@ -298,6 +304,8 @@ class _MenuRibbonState extends State<MenuRibbon> {
       case 'tab.closeright': return widget.onCloseTabsToRight;
       case 'tab.copyname': return widget.onCopyFileName;
       case 'tab.copypath': return widget.onCopyFilePath;
+      case 'search.find': return widget.onFind;
+      case 'search.replace': return widget.onReplace;
       default: return null;
     }
   }

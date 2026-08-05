@@ -19,6 +19,9 @@ import 'jwt_tools_panel.dart';
 import 'hex_editor_view.dart';
 import 'editor_settings.dart';
 import 'package:textutilz/src/rust/api/edit_ops.dart' as rust_edit_ops;
+import 'find_panel.dart';
+import 'find_state.dart';
+import 'package:textutilz/src/rust/api/search.dart' show MatchSpan;
 
 
 Future<void> main() async {
@@ -101,6 +104,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   final FocusNode _focusNode = FocusNode();
   bool _isRibbonVisible = false;
 
+  final FindController _findController = FindController();
+  bool _isFindVisible = false;
+
   int _newDocCounter = 1;
   bool _ctrlHeld = false; // while held, wheel zooms Read/Tail instead of scrolling
   bool _isMaximized = false;
@@ -144,6 +150,15 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     // Shared editor settings: when toggled (e.g. by a future config panel),
     // apply to every open editor and persist. Works for all editors alike.
     undoCoalescingNotifier.addListener(_onUndoCoalescingChanged);
+    // The editor's match highlighting is read from the controller at build
+    // time (see the CustomEditor `matches`/`currentMatch` args below), so a
+    // rebuild here is what actually propagates a new/updated match set to
+    // the painter — the panel's own setState only repaints itself.
+    _findController.addListener(_onFindChanged);
+  }
+
+  void _onFindChanged() {
+    if (mounted) setState(() {});
   }
 
   /// Propagate the undo-coalescing preference to all open sessions and persist.
@@ -285,6 +300,8 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     windowManager.removeListener(this);
     undoCoalescingNotifier.removeListener(_onUndoCoalescingChanged);
     _focusNode.dispose();
+    _findController.removeListener(_onFindChanged);
+    _findController.dispose();
     super.dispose();
   }
 
@@ -349,6 +366,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       _tabs.removeWhere(toClose.contains);
       if (_activeTabIndex >= _tabs.length) _activeTabIndex = _tabs.length - 1;
     });
+    _retargetFind();
     _persistSession();
   }
 
@@ -397,6 +415,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
         setState(() {
           _activeTabIndex = existingIndex;
         });
+        _retargetFind();
         return;
       }
       try {
@@ -421,6 +440,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
           ));
           _activeTabIndex = _tabs.length - 1;
         });
+        _retargetFind();
         _focusNode.requestFocus();
         _persistSession();
       } catch (e) {
@@ -455,6 +475,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
         _newDocCounter++;
         _store?.setSetting(key: 'new_doc_counter', value: _newDocCounter.toString());
       });
+      _retargetFind();
       _focusNode.requestFocus();
       _persistSession();
     } catch (e) {
@@ -581,6 +602,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       if (_activeTabIndex >= _tabs.length) _activeTabIndex = _tabs.length - 1;
       _isRibbonVisible = false;
     });
+    _retargetFind();
     _persistSession();
   }
 
@@ -735,6 +757,18 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   // KeyEventResult.ignored for these Ctrl combos so the ancestor Focus sees them.
   KeyEventResult _handleGlobalShortcut(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape && _isFindVisible) {
+      _closeFind();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f3 && _isFindVisible) {
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        _findController.stepBackward();
+      } else {
+        _findController.stepForward();
+      }
+      return KeyEventResult.handled;
+    }
     if (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyX) {
       setState(() {
         _isRibbonVisible = !_isRibbonVisible;
@@ -758,6 +792,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       case LogicalKeyboardKey.keyS:
         if (_activeTab?.isDirty == true) _saveFile();
         return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyF:
+        _openFind(FindPanelMode.find);
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyH:
+        _openFind(FindPanelMode.replace);
+        return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
@@ -766,6 +806,53 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// isn't in Edit mode (or isn't mounted yet).
   CustomEditorState? get _activeEditor =>
       (_activeTab?.mode == ViewMode.edit) ? _activeTab!.editorKey.currentState : null;
+
+  /// Show the find panel in [mode], pointed at the active tab's document.
+  void _openFind(FindPanelMode mode) {
+    final tab = _activeTab;
+    if (tab == null || tab.mode != ViewMode.edit) return;
+    _findController.attach(tab.session, tab.session.lineCount().toInt());
+    _findController.setMode(mode);
+    setState(() => _isFindVisible = true);
+  }
+
+  void _closeFind() {
+    setState(() => _isFindVisible = false);
+    _activeEditor?.focusEditor();
+  }
+
+  /// Matches to hand the painter: [_findController.loaded] restricted to rows
+  /// intersecting the editor's current viewport (with a one-screen margin
+  /// either side so a small scroll doesn't pop highlights in and out), so the
+  /// painter never has to walk a document-spanning match list just to draw
+  /// the handful of matches actually on screen.
+  List<MatchSpan> get _visibleFindMatches {
+    final editor = _activeEditor;
+    if (editor == null) return const [];
+    final loaded = _findController.loaded;
+    final (first, last) = editor.visibleRowRange;
+    final margin = (last - first).clamp(1, 1000);
+    final lo = first - margin;
+    final hi = last + margin;
+    return loaded
+        .where((m) => m.endRow.toInt() >= lo && m.startRow.toInt() <= hi)
+        .toList();
+  }
+
+  /// Re-point the panel at the newly active tab. Loaded matches are dropped
+  /// and rescanned; the query text and option toggles persist across tabs,
+  /// matching Notepad++.
+  void _retargetFind() {
+    if (!_isFindVisible) return;
+    final tab = _activeTab;
+    if (tab == null || tab.mode != ViewMode.edit) {
+      _findController.attach(null, 0);
+      return;
+    }
+    _findController.scope = _activeEditor?.selectionScope;
+    _findController.attach(tab.session, tab.session.lineCount().toInt());
+    _findController.refresh();
+  }
 
   /// Run a ribbon Edit-menu action against the active editor, then close the
   /// ribbon (focus returns to the editor inside the action itself).
@@ -1014,6 +1101,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             return GestureDetector(
                               onTap: () {
                                 setState(() => _activeTabIndex = index);
+                                _retargetFind();
                                 _persistSession();
                               },
                               child: Container(
@@ -1082,7 +1170,13 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           },
                         ),
                       )
-                    else if (_activeTab != null && _activeTab!.mode == ViewMode.edit)
+                    else if (_activeTab != null && _activeTab!.mode == ViewMode.edit) ...[
+                      if (_isFindVisible)
+                        FindPanel(
+                          controller: _findController,
+                          onClose: _closeFind,
+                          onReveal: (span) => _activeEditor?.revealSpan(span),
+                        ),
                       Expanded(
                         child: CustomEditor(
                           key: _activeTab!.editorKey,
@@ -1100,8 +1194,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           },
                           // Dirtiness lives in the session; repaint the tab dot.
                           onContentChanged: () => setState(() {}),
+                          matches: _isFindVisible ? _visibleFindMatches : const [],
+                          currentMatch:
+                              _isFindVisible ? _findController.currentMatch : null,
                         ),
-                      )
+                      ),
+                    ]
                     else
                       Expanded(
                         child: Focus(
@@ -1257,6 +1355,18 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                               : null,
                       onCopyFileName: _activeTab != null ? _copyFileName : null,
                       onCopyFilePath: _activeTab != null ? _copyFilePath : null,
+                      onFind: _activeTab?.mode == ViewMode.edit
+                          ? () {
+                              setState(() => _isRibbonVisible = false);
+                              _openFind(FindPanelMode.find);
+                            }
+                          : null,
+                      onReplace: _activeTab?.mode == ViewMode.edit
+                          ? () {
+                              setState(() => _isRibbonVisible = false);
+                              _openFind(FindPanelMode.replace);
+                            }
+                          : null,
                       currentAutoDelete: _activeTab?.meta.autoDelete,
                       onSetAutoDelete: _activeTab != null ? _setAutoDelete : null,
                       onCloseTab: _activeTab != null ? _closeActiveTab : null,
