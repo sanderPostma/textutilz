@@ -155,6 +155,11 @@ class CustomEditorState extends State<CustomEditor> {
   /// Return keyboard focus to the document. Used when the find panel closes.
   void focusEditor() => _focusNode.requestFocus();
 
+  /// The caret's current (row, column). Used to anchor a find refresh after an
+  /// edit, so the current match stays where the user is working instead of
+  /// jumping back to the top of the document.
+  (int, int) get caretPosition => (_cursorRow, _cursorCol);
+
   /// The current linear selection as a search scope, or null when there is
   /// none. Backs the panel's "In selection" option.
   SpanScope? get selectionScope {

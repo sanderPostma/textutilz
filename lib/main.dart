@@ -308,6 +308,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     _findController.removeListener(_onFindChanged);
     _findController.dispose();
     _viewportDebounce?.cancel();
+    _findRefreshDebounce?.cancel();
     super.dispose();
   }
 
@@ -817,8 +818,23 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   void _openFind(FindPanelMode mode) {
     final tab = _activeTab;
     if (tab == null || tab.mode != ViewMode.edit) return;
+    // Ctrl+F with the panel already open on this same document must not throw
+    // the user's place away: `attach` resets the match list and the current
+    // index, so re-running it here would jump them back to match 1 (or, with
+    // no refresh, to "No results"). Just re-read the selection scope, switch
+    // face, and hand focus back to the query field.
+    final alreadyOnThisDoc =
+        _isFindVisible && identical(_findController.session, tab.session);
     _findController.scope = _activeEditor?.selectionScope;
-    _findController.attach(tab.session, tab.session.lineCount().toInt());
+    if (!alreadyOnThisDoc) {
+      _findController.attach(tab.session, tab.session.lineCount().toInt());
+      // The query text deliberately persists across closes and across tabs,
+      // so a reopen has to re-run it — `attach` alone leaves the panel
+      // reporting "No results" with the old query still sitting in the field.
+      if (_findController.query.text.isNotEmpty) {
+        _findController.refresh();
+      }
+    }
     _findController.setMode(mode);
     setState(() => _isFindVisible = true);
     _scheduleViewportScan();
@@ -831,6 +847,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
 
   void _closeFind() {
     _viewportDebounce?.cancel();
+    _findRefreshDebounce?.cancel();
     _viewportScanGen++; // invalidate any in-flight scan
     setState(() {
       _isFindVisible = false;
@@ -858,6 +875,31 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     _viewportDebounce = Timer(kMatchDebounce, _runViewportScan);
   }
 
+  Timer? _findRefreshDebounce;
+
+  /// The document changed under the find panel. Every loaded match span past
+  /// the edit is now at the wrong coordinates: the painted highlights sit at
+  /// pre-edit positions, and clicking Replace on a stale span makes Rust
+  /// reject it ("match text no longer matches the pattern"). So re-scan.
+  ///
+  /// Debounced, because this fires on every keystroke. The refresh is
+  /// anchored on the caret so the current match stays where the user is
+  /// typing instead of snapping back to the first match in the document.
+  void _onDocumentEdited() {
+    if (!_isFindVisible) return;
+    final tab = _activeTab;
+    if (tab == null || tab.mode != ViewMode.edit) return;
+    _findController.setLineCount(tab.session.lineCount().toInt());
+    _scheduleViewportScan();
+    _findRefreshDebounce?.cancel();
+    _findRefreshDebounce = Timer(kMatchDebounce, () {
+      if (!mounted || !_isFindVisible) return;
+      if (_findController.query.text.isEmpty) return;
+      final (row, col) = _activeEditor?.caretPosition ?? (0, 0);
+      _findController.refresh(anchorRow: row, anchorCol: col);
+    });
+  }
+
   Future<void> _runViewportScan() async {
     final gen = ++_viewportScanGen;
     if (!_isFindVisible) return;
@@ -879,11 +921,11 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     }
     List<MatchSpan> found;
     try {
-      found = await tab.session.findInRows(
-        query: _findController.currentQuery,
-        fromRow: BigInt.from(first),
-        toRow: BigInt.from(last),
-      );
+      // Through the controller, so this shares the active "In selection"
+      // scope with the counter, stepping and Replace All. Painting the raw
+      // `findInRows` result here would highlight matches the counter doesn't
+      // count and Replace All won't touch.
+      found = await _findController.scanViewport(first, last);
     } catch (_) {
       // A transient scan failure (e.g. an in-progress invalid regex edit)
       // leaves the previous highlight set rather than flashing it empty.
@@ -907,10 +949,17 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       setState(() => _viewportMatches = const []);
       return;
     }
-    _findController.scope = _activeEditor?.selectionScope;
     _findController.attach(tab.session, tab.session.lineCount().toInt());
-    _findController.refresh();
-    _scheduleViewportScan();
+    // The new tab's editor State doesn't exist yet at this point in a tab
+    // switch, so `_activeEditor` is still null and reading its selection here
+    // would leave the scope null — disabling "In selection" until the next
+    // time the panel is opened. Read it once the new editor has been built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isFindVisible) return;
+      _findController.scope = _activeEditor?.selectionScope;
+      _findController.refresh();
+      _scheduleViewportScan();
+    });
   }
 
   /// Run a ribbon Edit-menu action against the active editor, then close the
@@ -1253,7 +1302,12 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                             );
                           },
                           // Dirtiness lives in the session; repaint the tab dot.
-                          onContentChanged: () => setState(() {}),
+                          // Editing also moves every match after the caret, so
+                          // the find panel's state has to be invalidated too.
+                          onContentChanged: () {
+                            setState(() {});
+                            _onDocumentEdited();
+                          },
                           matches: _isFindVisible ? _viewportMatches : const [],
                           currentMatch:
                               _isFindVisible ? _findController.currentMatch : null,
