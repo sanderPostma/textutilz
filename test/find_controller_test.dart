@@ -228,35 +228,159 @@ void main() {
     expect(c.loaded, isEmpty);
   });
 
-  test('rapid steps do not duplicate a prefetched window', () async {
+  test('a step that pages a new window does not duplicate an in-flight prefetch',
+      () async {
+    // The window boundary is at row 4096 (kSearchWindowRows).
+    //
+    //   rows    0-4075 : filler, no matches
+    //   rows 4076-4095 : 20 matches, the tail of window 0
+    //   rows 4096-4100 :  5 matches, only reachable by paging window 1
+    //
+    // After refresh, `loaded` holds exactly the 20 matches of window 0, and
+    // `_loadedTo` is 4096. `kPrefetchMargin` is 20, so the very FIRST step
+    // already trips `_maybePrefetch` and puts a load of window 1 in flight.
+    //
+    // The steps are fired without awaiting, so later ones run while that
+    // prefetch is still pending. Step 20 exhausts the loaded matches and has
+    // to page a window itself: it reads `_loadedTo` (still 4096, the prefetch
+    // hasn't written it back yet) and, unless it shares the prefetch's
+    // in-flight guard, requests window 1 a SECOND time. Both results then get
+    // appended — 25 matches become 30, five of them duplicates, F3 visits the
+    // same line twice, and the counter can read "30 of 25".
     final rows = <String>[];
     for (var i = 0; i < 4076; i++) {
       rows.add('x');
     }
-    for (var i = 0; i < 20; i++) {
-      rows.add('hit'); // rows 4076-4095: fills the first window's tail
-    }
-    for (var i = 0; i < 5; i++) {
-      rows.add('hit'); // rows 4096-4100: only visible after a prefetch
+    for (var i = 0; i < 25; i++) {
+      rows.add('hit'); // rows 4076-4100, straddling the window boundary
     }
     final content = '${rows.join('\n')}\n';
     final c = await controllerOver(content, 'hit');
-    expect(c.loaded.length, 20);
+    expect(c.loaded.length, 20, reason: 'only window 0 is loaded at first');
 
-    // Two rapid steps, neither awaited before the other starts: both land in
-    // the fast path (already-loaded matches) and can each try to prefetch
-    // the same next window before the first prefetch resolves.
-    final f1 = c.stepForward();
-    final f2 = c.stepForward();
-    await Future.wait([f1, f2]);
-    await Future.delayed(const Duration(milliseconds: 200));
+    final steps = <Future<void>>[];
+    for (var i = 0; i < 20; i++) {
+      steps.add(c.stepForward()); // deliberately not awaited in turn
+    }
+    await Future.wait(steps);
+    // Let any prefetch still in flight resolve and append.
+    await Future.delayed(const Duration(milliseconds: 300));
 
     final seen = <String>{};
     for (final m in c.loaded) {
-      final key =
-          '${m.startRow}-${m.startCol}-${m.endRow}-${m.endCol}';
+      final key = '${m.startRow}-${m.startCol}-${m.endRow}-${m.endCol}';
       expect(seen.add(key), true, reason: 'duplicate match: $key');
     }
+    expect(c.loaded.length, 25,
+        reason: 'window 1 must be appended exactly once');
+    // And the counter must not claim a position past the total.
+    expect(c.currentIndex, lessThan(c.loaded.length));
+  });
+
+  test('only a deliberate move asks the host to scroll to the match', () async {
+    // `revealTick` is what the panel watches to decide whether to scroll the
+    // editor. If it moved on every notification, a background sweep
+    // resolving, or the re-scan that follows a keystroke, would drag the
+    // editor back to the current match and steal the caret while typing.
+    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+    final afterSearch = c.revealTick;
+
+    // The background count sweep resolving is not a move.
+    await c.awaitSweep();
+    expect(c.revealTick, afterSearch, reason: 'a sweep is not a move');
+
+    // Nor is a re-scan anchored on the caret — that is what the host runs
+    // after the document was edited under the panel.
+    await c.refresh(anchorRow: 1, anchorCol: 0);
+    expect(c.revealTick, afterSearch,
+        reason: 'an anchored re-scan must not scroll the editor');
+
+    // Stepping is.
+    await c.stepForward();
+    expect(c.revealTick, greaterThan(afterSearch));
+    final afterStep = c.revealTick;
+    await c.stepBackward();
+    expect(c.revealTick, greaterThan(afterStep));
+
+    // So is replacing, which advances past the text just written.
+    final afterBack = c.revealTick;
+    c.replacement.text = 'X';
+    await c.replaceCurrent();
+    expect(c.revealTick, greaterThan(afterBack));
+  });
+
+  test('disposing mid-scan does not notify a disposed controller', () async {
+    // The panel can be closed (and the controller disposed) while a scan or
+    // the background count sweep is still in flight. Every post-await
+    // notification has to be guarded, or ChangeNotifier throws
+    // "A FindController was used after being disposed".
+    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+    // `refresh()` returns as soon as the first window is loaded; the count
+    // sweep it started is still running and will notify when it resolves.
+    expect(c.sweepRunning, true);
+    c.dispose();
+    await c.awaitSweep(); // the sweep's notify must not throw
+
+    // Same for a scan that is still in flight when the panel closes.
+    final c2 = FindController();
+    final session = sessionWith('hit\nhit\nhit\n');
+    c2.attach(session, session.lineCount().toInt());
+    c2.query.text = 'hit';
+    final pending = c2.refresh();
+    c2.dispose();
+    await pending;
+    await c2.awaitSweep();
+  });
+
+  // --- Viewport highlighting ----------------------------------------------
+
+  test('the painted viewport set honours "In selection"', () async {
+    // The set the editor paints (`scanViewport`) and the set the counter
+    // counts (`countMatches`, via `recount`) must agree. Before this was
+    // routed through the controller's active scope, the viewport scan called
+    // findInRows directly with no scope: with "In selection" on it painted
+    // every match on screen while the counter counted only the selected ones,
+    // and Replace All touched only the selected ones. The user saw
+    // highlights that nothing else agreed with.
+    final c = await controllerOver('hit\nhit\nhit\nhit\n', 'hit');
+
+    // No scope: the whole viewport is painted, and that matches the count.
+    var painted = await c.scanViewport(0, 4);
+    expect(painted.length, 4);
+    expect(await c.recount(), 4);
+
+    // Restrict to rows 1-2 and turn "In selection" on.
+    c.scope = SpanScope(
+      startRow: BigInt.one,
+      startCol: BigInt.zero,
+      endRow: BigInt.two,
+      endCol: BigInt.from(3),
+    );
+    c.inSelection = true;
+    await c.refresh();
+
+    painted = await c.scanViewport(0, 4);
+    final counted = await c.recount();
+    expect(counted, 2, reason: 'only rows 1 and 2 are in the selection');
+    expect(painted.length, counted,
+        reason: 'the painted set must not exceed what the counter counts');
+    expect(painted.map((m) => m.startRow.toInt()).toList(), [1, 2]);
+    // And it must agree with what stepping walks, too.
+    expect(c.loaded.length, counted);
+  });
+
+  test('a viewport scan outside the selection paints nothing', () async {
+    final c = await controllerOver('hit\nhit\nhit\nhit\n', 'hit');
+    c.scope = SpanScope(
+      startRow: BigInt.from(2),
+      startCol: BigInt.zero,
+      endRow: BigInt.from(3),
+      endCol: BigInt.from(3),
+    );
+    c.inSelection = true;
+    await c.refresh();
+    final painted = await c.scanViewport(0, 2); // rows 0-1, all out of scope
+    expect(painted, isEmpty);
   });
 
   test('sweepRunning does not leak when the query is cleared mid-sweep',

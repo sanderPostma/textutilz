@@ -32,6 +32,7 @@ class FindPanelState extends State<FindPanel> {
   void initState() {
     super.initState();
     c.addListener(_onControllerChanged);
+    _revealedTick = c.revealTick;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _queryFocus.requestFocus(),
     );
@@ -49,24 +50,68 @@ class FindPanelState extends State<FindPanel> {
     super.dispose();
   }
 
+  /// The value of [FindController.revealTick] we last scrolled for.
+  int _revealedTick = 0;
+
+  @override
+  void didUpdateWidget(FindPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      _revealedTick = widget.controller.revealTick;
+    }
+  }
+
   void _onControllerChanged() {
     if (!mounted) return;
     setState(() {});
+    // The controller notifies for plenty of things that are not "the user
+    // moved to a match": a background sweep resolving the exact total, a
+    // prefetch landing, the document being re-scanned after a keystroke.
+    // Revealing on those would yank the editor back to the current match
+    // after the user had scrolled away, and would fight the caret while
+    // typing. `revealTick` changes only on a deliberate move.
+    if (c.revealTick == _revealedTick) return;
+    _revealedTick = c.revealTick;
     final m = c.currentMatch;
-    if (m != null) {
-      // Deferred to avoid triggering a setState (via revealSpan's scroll)
-      // while this widget's own build/listener callback is still in flight.
-      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onReveal(m));
-    }
+    if (m == null) return;
+    // Deferred to avoid triggering a setState (via revealSpan's scroll)
+    // while this widget's own build/listener callback is still in flight.
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onReveal(m));
   }
 
   Future<void> _next() async => c.stepForward();
   Future<void> _prev() async => c.stepBackward();
 
-  Future<void> _replaceCurrent() async => c.replaceCurrent();
+  /// Report a replace that Rust rejected. Without this the failure surfaces
+  /// only as an unhandled async error and the button appears to do nothing.
+  void _reportFailure(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Replace failed: $error')),
+    );
+  }
+
+  Future<void> _replaceCurrent() async {
+    try {
+      await c.replaceCurrent();
+    } catch (e) {
+      // e.g. the document was edited under the panel, so the stored span no
+      // longer holds the matched text ("match text no longer matches the
+      // pattern" from expand_for_span).
+      _reportFailure(e);
+    }
+  }
 
   Future<void> _replaceAll() async {
-    final n = await c.replaceAll();
+    final int n;
+    try {
+      n = await c.replaceAll();
+    } catch (e) {
+      _reportFailure(e);
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(n == 1 ? '1 replacement' : '$n replacements')),
