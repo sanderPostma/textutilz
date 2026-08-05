@@ -832,6 +832,16 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   CustomEditorState? get _activeEditor =>
       (_activeTab?.mode == ViewMode.edit) ? _activeTab!.editorKey.currentState : null;
 
+  /// Whether the docked find/tool bars are allowed to render for the active
+  /// tab. Mirrors the editor-area if/else-if chain below (JwtToolView /
+  /// HexEditorView / CustomEditor): the bars only make sense while a plain
+  /// [CustomEditor] is the visible widget, i.e. edit mode and no jwt.* tool
+  /// view is showing. Kept as a single getter so the next branch added to
+  /// that chain only needs updating here, not on every bar guard.
+  bool get _barsMayShow =>
+      _activeTab?.mode == ViewMode.edit &&
+      _activeTab?.activeTool?.startsWith('jwt') != true;
+
   /// Show the find panel in [mode], pointed at the active tab's document.
   void _openFind(FindPanelMode mode) {
     final tab = _activeTab;
@@ -1233,15 +1243,14 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
               children: [
                 Column(
                   children: [
-                    if (_isFindVisible && _activeTab?.mode == ViewMode.edit)
+                    if (_isFindVisible && _barsMayShow)
                       FindPanel(
                         key: _findPanelKey,
                         controller: _findController,
                         onClose: _closeFind,
                         onReveal: (span) => _activeEditor?.revealSpan(span),
                       ),
-                    if (_activeToolPanelId != null &&
-                        _activeTab?.mode == ViewMode.edit)
+                    if (_activeToolPanelId != null && _barsMayShow)
                       ToolBar(
                         panelId: _activeToolPanelId!,
                         editToolsEnabled: _activeEditor != null,
@@ -1499,6 +1508,8 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           setState(() {
                             _activeTab!.activeTool = toolId;
                             _isRibbonVisible = false;
+                            _isFindVisible = false;
+                            _activeToolPanelId = null;
                           });
                           _persistSession();
                         }
