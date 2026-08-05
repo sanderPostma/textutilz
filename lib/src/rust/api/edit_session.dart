@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'search.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `span_in_scope`, `u16_len`, `u16_to_byte`
+// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `scope_row_bounds`, `span_in_scope`, `u16_len`, `u16_to_byte`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `UndoEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
@@ -63,10 +63,18 @@ abstract class EditSession implements RustOpaqueInterface {
   /// `to_row` so a multi-line match straddling the boundary is still found,
   /// but such a match is only returned by the window its *start* falls in.
   /// Consecutive windows therefore tile exactly, with no duplicates.
+  ///
+  /// When `scope` is given ("In selection"), only matches lying wholly
+  /// inside it are returned — this is the single place scope filtering
+  /// happens, so every caller (paging, viewport highlighting, counting,
+  /// Replace All) agrees on what is in scope. The requested row range is
+  /// also clamped to the scope's own rows, so paging towards a selection
+  /// far down a large document does no per-window work before reaching it.
   Future<List<MatchSpan>> findInRows({
     required SearchQuery query,
     required BigInt fromRow,
     required BigInt toRow,
+    SpanScope? scope,
   });
 
   CaretPos insert({
@@ -98,6 +106,14 @@ abstract class EditSession implements RustOpaqueInterface {
   /// Replace every match (optionally limited to `scope`) as ONE undo step.
   /// Matches are collected first, then applied back-to-front so earlier
   /// spans stay valid as later ones change length. Returns the count.
+  ///
+  /// Known limitation: this is quadratic in the number of matches — the
+  /// per-edit overlay bookkeeping in `prepare_edit`/`get_logical` costs more
+  /// as the overlay grows, so 10k matches take ~0.6s, 20k ~2.1s and 40k
+  /// ~7.3s in release. The cause is pre-existing `EditSession` machinery
+  /// shared with all editing, not the search itself, and fixing it is
+  /// deliberately deferred. See the "Known limitations" section of
+  /// docs/superpowers/specs/2026-08-05-find-replace-panel-design.md.
   Future<BigInt> replaceAllInRows({
     required SearchQuery query,
     required String replacement,

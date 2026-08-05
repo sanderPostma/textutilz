@@ -152,6 +152,7 @@ abstract class RustLibApi extends BaseApi {
     required SearchQuery query,
     required BigInt fromRow,
     required BigInt toRow,
+    SpanScope? scope,
   });
 
   CaretPos crateApiEditSessionEditSessionInsert({
@@ -1001,6 +1002,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required SearchQuery query,
     required BigInt fromRow,
     required BigInt toRow,
+    SpanScope? scope,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1013,6 +1015,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_box_autoadd_search_query(query, serializer);
           sse_encode_usize(fromRow, serializer);
           sse_encode_usize(toRow, serializer);
+          sse_encode_opt_box_autoadd_span_scope(scope, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1025,7 +1028,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiEditSessionEditSessionFindInRowsConstMeta,
-        argValues: [that, query, fromRow, toRow],
+        argValues: [that, query, fromRow, toRow, scope],
         apiImpl: this,
       ),
     );
@@ -1034,7 +1037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiEditSessionEditSessionFindInRowsConstMeta =>
       const TaskConstMeta(
         debugName: "EditSession_find_in_rows",
-        argNames: ["that", "query", "fromRow", "toRow"],
+        argNames: ["that", "query", "fromRow", "toRow", "scope"],
       );
 
   @override
@@ -5556,15 +5559,24 @@ class EditSessionImpl extends RustOpaque implements EditSession {
   /// `to_row` so a multi-line match straddling the boundary is still found,
   /// but such a match is only returned by the window its *start* falls in.
   /// Consecutive windows therefore tile exactly, with no duplicates.
+  ///
+  /// When `scope` is given ("In selection"), only matches lying wholly
+  /// inside it are returned — this is the single place scope filtering
+  /// happens, so every caller (paging, viewport highlighting, counting,
+  /// Replace All) agrees on what is in scope. The requested row range is
+  /// also clamped to the scope's own rows, so paging towards a selection
+  /// far down a large document does no per-window work before reaching it.
   Future<List<MatchSpan>> findInRows({
     required SearchQuery query,
     required BigInt fromRow,
     required BigInt toRow,
+    SpanScope? scope,
   }) => RustLib.instance.api.crateApiEditSessionEditSessionFindInRows(
     that: this,
     query: query,
     fromRow: fromRow,
     toRow: toRow,
+    scope: scope,
   );
 
   CaretPos insert({
@@ -5605,6 +5617,14 @@ class EditSessionImpl extends RustOpaque implements EditSession {
   /// Replace every match (optionally limited to `scope`) as ONE undo step.
   /// Matches are collected first, then applied back-to-front so earlier
   /// spans stay valid as later ones change length. Returns the count.
+  ///
+  /// Known limitation: this is quadratic in the number of matches — the
+  /// per-edit overlay bookkeeping in `prepare_edit`/`get_logical` costs more
+  /// as the overlay grows, so 10k matches take ~0.6s, 20k ~2.1s and 40k
+  /// ~7.3s in release. The cause is pre-existing `EditSession` machinery
+  /// shared with all editing, not the search itself, and fixing it is
+  /// deliberately deferred. See the "Known limitations" section of
+  /// docs/superpowers/specs/2026-08-05-find-replace-panel-design.md.
   Future<BigInt> replaceAllInRows({
     required SearchQuery query,
     required String replacement,

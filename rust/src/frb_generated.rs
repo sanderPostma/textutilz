@@ -802,6 +802,7 @@ fn wire__crate__api__edit_session__EditSession_find_in_rows_impl(
             let api_query = <crate::api::search::SearchQuery>::sse_decode(&mut deserializer);
             let api_from_row = <usize>::sse_decode(&mut deserializer);
             let api_to_row = <usize>::sse_decode(&mut deserializer);
+            let api_scope = <Option<crate::api::search::SpanScope>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -825,6 +826,7 @@ fn wire__crate__api__edit_session__EditSession_find_in_rows_impl(
                             api_query,
                             api_from_row,
                             api_to_row,
+                            api_scope,
                         )?;
                         Ok(output_ok)
                     })(),

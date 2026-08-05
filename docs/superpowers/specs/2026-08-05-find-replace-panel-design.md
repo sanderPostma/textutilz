@@ -272,3 +272,41 @@ Following the existing `test/undo_coalescing_test.dart` pattern:
 
 Phases 1 and 2 are independently testable before any pixel is drawn, which is
 the point of splitting them out.
+
+## Known limitations
+
+### Replace All is quadratic in the number of matches
+
+`EditSession::replace_all_in_rows` collects every match, then applies the
+replacements back-to-front as one undo group. The scan itself is linear, but
+applying the edits is not. Measured in a release build:
+
+| Matches | Replace All |
+|--------:|------------:|
+|  10,000 |       0.6 s |
+|  20,000 |       2.1 s |
+|  40,000 |       7.3 s |
+
+Doubling the match count roughly quadruples the time.
+
+**Root cause — not in this feature.** The cost is in `EditSession`'s
+copy-on-write overlay bookkeeping, which every edit path shares:
+
+- `prepare_edit` pushes into `edited_rows` and then `sort_unstable`s it, so the
+  n-th edit of a Replace All sorts an n-element vector.
+- `get_logical` walks `edited_rows` linearly to map a visual row to a logical
+  one, so each subsequent edit's lookup gets more expensive as the overlay
+  grows.
+
+Neither is introduced by find/replace; both predate it and are exercised by
+ordinary typing too (just never with tens of thousands of edits in one go).
+
+**Status: deferred by decision.** Fixing it means changing the overlay and undo
+bookkeeping that all editing depends on — a much larger, riskier change than
+this feature, and one that deserves its own spec and test pass. Replace All
+over a normal edit (hundreds to a few thousand matches) is comfortably fast;
+the pathological case is a whole-document replace on a very large file.
+
+If it is picked up later, the two obvious directions are keeping `edited_rows`
+sorted by insertion rather than re-sorting, and replacing `get_logical`'s
+linear scan with a binary search or a prefix-sum index.

@@ -626,17 +626,28 @@ impl EditSession {
     /// `to_row` so a multi-line match straddling the boundary is still found,
     /// but such a match is only returned by the window its *start* falls in.
     /// Consecutive windows therefore tile exactly, with no duplicates.
+    ///
+    /// When `scope` is given ("In selection"), only matches lying wholly
+    /// inside it are returned — this is the single place scope filtering
+    /// happens, so every caller (paging, viewport highlighting, counting,
+    /// Replace All) agrees on what is in scope. The requested row range is
+    /// also clamped to the scope's own rows, so paging towards a selection
+    /// far down a large document does no per-window work before reaching it.
     pub fn find_in_rows(
         &self,
         query: crate::api::search::SearchQuery,
         from_row: usize,
         to_row: usize,
+        scope: Option<crate::api::search::SpanScope>,
     ) -> anyhow::Result<Vec<crate::api::search::MatchSpan>> {
         use crate::api::search::{compile, MatchSpan, SEARCH_WINDOW_OVERLAP_ROWS};
 
         let total = self.line_count();
-        let from = from_row.min(total);
-        let to = to_row.min(total);
+        // Nothing before the scope's first row, or starting after its last
+        // row, can ever be in scope — so don't scan those rows at all.
+        let (scope_lo, scope_hi) = Self::scope_row_bounds(&scope, total);
+        let from = from_row.min(total).max(scope_lo);
+        let to = to_row.min(total).min(scope_hi);
         if from >= to {
             return Ok(Vec::new());
         }
@@ -677,12 +688,16 @@ impl EditSession {
                 break;
             }
             let (erow, ecol) = locate(m.end());
-            out.push(MatchSpan {
+            let span = MatchSpan {
                 start_row: srow,
                 start_col: scol,
                 end_row: erow,
                 end_col: ecol,
-            });
+            };
+            match &scope {
+                Some(sc) if !span_in_scope(&span, sc) => {}
+                _ => out.push(span),
+            }
             // A zero-length match must advance, or this loops forever.
             at = if m.end() > m.start() {
                 m.end()
@@ -707,10 +722,10 @@ impl EditSession {
         use crate::api::search::{SearchQuery, SEARCH_WINDOW_ROWS};
 
         let total = self.line_count();
+        let (mut row, end) = Self::scope_row_bounds(&scope, total);
         let mut count = 0usize;
-        let mut row = 0usize;
-        while row < total {
-            let to = (row + SEARCH_WINDOW_ROWS).min(total);
+        while row < end {
+            let to = (row + SEARCH_WINDOW_ROWS).min(end);
             // SearchQuery is not Copy; rebuild it per window.
             let q = SearchQuery {
                 pattern: query.pattern.clone(),
@@ -719,12 +734,7 @@ impl EditSession {
                 whole_word: query.whole_word,
                 dot_matches_newline: query.dot_matches_newline,
             };
-            for span in self.find_in_rows(q, row, to)? {
-                match &scope {
-                    Some(sc) if !span_in_scope(&span, sc) => continue,
-                    _ => count += 1,
-                }
-            }
+            count += self.find_in_rows(q, row, to, scope.clone())?.len();
             row = to;
         }
         Ok(count)
@@ -746,9 +756,32 @@ impl EditSession {
         Ok(caret)
     }
 
+    /// The `[from, to)` row range worth scanning for `scope` in a document of
+    /// `total` rows. Without a scope that is the whole document.
+    fn scope_row_bounds(
+        scope: &Option<crate::api::search::SpanScope>,
+        total: usize,
+    ) -> (usize, usize) {
+        match scope {
+            Some(sc) => (
+                sc.start_row.min(total),
+                sc.end_row.saturating_add(1).min(total),
+            ),
+            None => (0, total),
+        }
+    }
+
     /// Replace every match (optionally limited to `scope`) as ONE undo step.
     /// Matches are collected first, then applied back-to-front so earlier
     /// spans stay valid as later ones change length. Returns the count.
+    ///
+    /// Known limitation: this is quadratic in the number of matches — the
+    /// per-edit overlay bookkeeping in `prepare_edit`/`get_logical` costs more
+    /// as the overlay grows, so 10k matches take ~0.6s, 20k ~2.1s and 40k
+    /// ~7.3s in release. The cause is pre-existing `EditSession` machinery
+    /// shared with all editing, not the search itself, and fixing it is
+    /// deliberately deferred. See the "Known limitations" section of
+    /// docs/superpowers/specs/2026-08-05-find-replace-panel-design.md.
     pub fn replace_all_in_rows(
         &mut self,
         query: crate::api::search::SearchQuery,
@@ -759,10 +792,10 @@ impl EditSession {
 
         // Collect first: the document must not change while scanning.
         let total = self.line_count();
-        let mut spans = Vec::new();
-        let mut row = 0usize;
-        while row < total {
-            let to = (row + SEARCH_WINDOW_ROWS).min(total);
+        let (mut row, end) = Self::scope_row_bounds(&scope, total);
+        let mut found = Vec::new();
+        while row < end {
+            let to = (row + SEARCH_WINDOW_ROWS).min(end);
             let q = SearchQuery {
                 pattern: query.pattern.clone(),
                 mode: query.mode.clone(),
@@ -770,22 +803,30 @@ impl EditSession {
                 whole_word: query.whole_word,
                 dot_matches_newline: query.dot_matches_newline,
             };
-            for span in self.find_in_rows(q, row, to)? {
-                match &scope {
-                    Some(sc) if !span_in_scope(&span, sc) => continue,
-                    _ => spans.push(span),
-                }
-            }
+            found.extend(self.find_in_rows(q, row, to, scope.clone())?);
             row = to;
-        }
-        if spans.is_empty() {
-            return Ok(0);
         }
 
         // Expand replacements before mutating, for the same reason.
-        let mut texts = Vec::with_capacity(spans.len());
-        for span in &spans {
-            texts.push(self.expand_for_span(&query, span, &replacement)?);
+        //
+        // A zero-length match replaced by empty text (e.g. `x*` over text with
+        // no 'x') writes nothing, so recording it would mark the document
+        // dirty and push an undo step for a change that did not happen. Drop
+        // those here rather than applying them as no-op primitives.
+        let mut spans = Vec::with_capacity(found.len());
+        let mut texts = Vec::with_capacity(found.len());
+        for span in found {
+            let text = self.expand_for_span(&query, &span, &replacement)?;
+            let empty_span =
+                (span.start_row, span.start_col) == (span.end_row, span.end_col);
+            if empty_span && text.is_empty() {
+                continue;
+            }
+            spans.push(span);
+            texts.push(text);
+        }
+        if spans.is_empty() {
+            return Ok(0);
         }
 
         let n = spans.len();
@@ -1135,7 +1176,7 @@ mod tests {
     #[test]
     fn find_matches_at_document_start() {
         let (s, _p) = session("needle here\nother\n");
-        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        let m = s.find_in_rows(query("needle"), 0, 10, None).unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!((m[0].start_row, m[0].start_col), (0, 0));
         assert_eq!((m[0].end_row, m[0].end_col), (0, 6));
@@ -1144,7 +1185,7 @@ mod tests {
     #[test]
     fn find_matches_at_document_end() {
         let (s, _p) = session("alpha\nbeta needle");
-        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        let m = s.find_in_rows(query("needle"), 0, 10, None).unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!((m[0].start_row, m[0].start_col), (1, 5));
         assert_eq!((m[0].end_row, m[0].end_col), (1, 11));
@@ -1153,7 +1194,7 @@ mod tests {
     #[test]
     fn find_returns_matches_in_order() {
         let (s, _p) = session("x\nax\nbx\n");
-        let m = s.find_in_rows(query("x"), 0, 10).unwrap();
+        let m = s.find_in_rows(query("x"), 0, 10, None).unwrap();
         assert_eq!(m.len(), 3);
         assert_eq!(m[0].start_row, 0);
         assert_eq!(m[1].start_row, 1);
@@ -1164,14 +1205,14 @@ mod tests {
     fn find_uses_utf16_columns() {
         // "😀" is 2 UTF-16 code units, so the match starts at column 2.
         let (s, _p) = session("😀needle\n");
-        let m = s.find_in_rows(query("needle"), 0, 10).unwrap();
+        let m = s.find_in_rows(query("needle"), 0, 10, None).unwrap();
         assert_eq!(m[0].start_col, 2);
     }
 
     #[test]
     fn find_matches_multiline_pattern_inside_window() {
         let (s, _p) = session("alpha\nbeta\ngamma\n");
-        let m = s.find_in_rows(regex_query("alpha.beta", true), 0, 10).unwrap();
+        let m = s.find_in_rows(regex_query("alpha.beta", true), 0, 10, None).unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!((m[0].start_row, m[0].start_col), (0, 0));
         assert_eq!((m[0].end_row, m[0].end_col), (1, 4));
@@ -1194,7 +1235,7 @@ mod tests {
         assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
         let content = n_row_document(100);
         let (s, _p) = session(&content);
-        let m = s.find_in_rows(regex_query("row9.*row73", true), 0, 10).unwrap();
+        let m = s.find_in_rows(regex_query("row9.*row73", true), 0, 10, None).unwrap();
         assert_eq!(m.len(), 1, "overlap should catch the straddling match");
         assert_eq!((m[0].start_row, m[0].start_col), (9, 0));
         assert_eq!((m[0].end_row, m[0].end_col), (73, 5));
@@ -1215,7 +1256,7 @@ mod tests {
         assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
         let content = n_row_document(100);
         let (s, _p) = session(&content);
-        let m = s.find_in_rows(regex_query("row9.*row74", true), 0, 10).unwrap();
+        let m = s.find_in_rows(regex_query("row9.*row74", true), 0, 10, None).unwrap();
         assert!(
             m.is_empty(),
             "a match reaching past the overlap window must not be found"
@@ -1226,8 +1267,8 @@ mod tests {
     fn find_excludes_matches_starting_at_or_after_to_row() {
         // Consecutive windows must tile exactly, with no duplicates.
         let (s, _p) = session("hit\nhit\nhit\nhit\n");
-        let first = s.find_in_rows(query("hit"), 0, 2).unwrap();
-        let second = s.find_in_rows(query("hit"), 2, 4).unwrap();
+        let first = s.find_in_rows(query("hit"), 0, 2, None).unwrap();
+        let second = s.find_in_rows(query("hit"), 2, 4, None).unwrap();
         assert_eq!(first.len(), 2);
         assert_eq!(second.len(), 2);
         assert_eq!(first[0].start_row, 0);
@@ -1237,16 +1278,16 @@ mod tests {
     #[test]
     fn find_clamps_range_beyond_document() {
         let (s, _p) = session("only\n");
-        let m = s.find_in_rows(query("only"), 0, 100_000).unwrap();
+        let m = s.find_in_rows(query("only"), 0, 100_000, None).unwrap();
         assert_eq!(m.len(), 1);
-        let none = s.find_in_rows(query("only"), 50, 100).unwrap();
+        let none = s.find_in_rows(query("only"), 50, 100, None).unwrap();
         assert!(none.is_empty());
     }
 
     #[test]
     fn find_with_inverted_range_returns_empty() {
         let (s, _p) = session("hit\n");
-        assert!(s.find_in_rows(query("hit"), 5, 2).unwrap().is_empty());
+        assert!(s.find_in_rows(query("hit"), 5, 2, None).unwrap().is_empty());
     }
 
     #[test]
@@ -1258,7 +1299,7 @@ mod tests {
         // every byte offset 0..=3: before 'a', before 'b', before '\n' (still
         // row 0, since '\n' is the row separator, not row 1's content), and
         // at the start of the empty row 1.
-        let m = s.find_in_rows(regex_query("x*", false), 0, 10).unwrap();
+        let m = s.find_in_rows(regex_query("x*", false), 0, 10, None).unwrap();
         let spans: Vec<(usize, usize, usize, usize)> = m
             .iter()
             .map(|sp| (sp.start_row, sp.start_col, sp.end_row, sp.end_col))
@@ -1273,7 +1314,7 @@ mod tests {
     #[test]
     fn find_reports_error_for_invalid_regex() {
         let (s, _p) = session("anything\n");
-        assert!(s.find_in_rows(regex_query("a(", false), 0, 10).is_err());
+        assert!(s.find_in_rows(regex_query("a(", false), 0, 10, None).is_err());
     }
 
     #[test]
@@ -1365,7 +1406,7 @@ mod tests {
     #[test]
     fn replace_span_replaces_one_match() {
         let (mut s, _p) = session("hit hit\n");
-        let spans = s.find_in_rows(query("hit"), 0, 10).unwrap();
+        let spans = s.find_in_rows(query("hit"), 0, 10, None).unwrap();
         let first = MatchSpan {
             start_row: spans[0].start_row,
             start_col: spans[0].start_col,
@@ -1381,7 +1422,7 @@ mod tests {
     #[test]
     fn replace_span_undoes_as_one_step() {
         let (mut s, _p) = session("hit hit\n");
-        let spans = s.find_in_rows(query("hit"), 0, 10).unwrap();
+        let spans = s.find_in_rows(query("hit"), 0, 10, None).unwrap();
         let first = MatchSpan {
             start_row: spans[0].start_row,
             start_col: spans[0].start_col,
@@ -1397,7 +1438,9 @@ mod tests {
     fn replace_span_expands_captures_in_regex_mode() {
         let (mut s, _p) = session("user@host\n");
         let q = regex_query(r"(\w+)@(\w+)", false);
-        let spans = s.find_in_rows(regex_query(r"(\w+)@(\w+)", false), 0, 10).unwrap();
+        let spans = s
+            .find_in_rows(regex_query(r"(\w+)@(\w+)", false), 0, 10, None)
+            .unwrap();
         let first = MatchSpan {
             start_row: spans[0].start_row,
             start_col: spans[0].start_col,
@@ -1472,6 +1515,181 @@ mod tests {
         let n = s
             .replace_all_in_rows(regex_query("x*", false), "".to_string(), None)
             .unwrap();
-        assert!(n < 100, "zero-length matches must not loop");
+        // `x*` matches empty at every position and the replacement is empty,
+        // so nothing is written. Reporting a count, or recording no-op
+        // primitives, would mark the document dirty for a change that never
+        // happened.
+        assert_eq!(n, 0, "empty-for-empty replacements are not replacements");
+        assert_eq!(doc(&s), "ab\n", "the document must be byte-identical");
+        assert!(
+            !s.can_undo(),
+            "a replace that wrote nothing must not push an undo step"
+        );
+    }
+
+    #[test]
+    fn replace_all_still_replaces_a_zero_length_match_with_real_text() {
+        // The zero-length skip must be conditional on the *replacement* being
+        // empty too: inserting text at every position is a real edit.
+        let (mut s, _p) = session("ab\n");
+        let n = s
+            .replace_all_in_rows(regex_query("x*", false), "-".to_string(), None)
+            .unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(doc(&s), "-a-b-\n-");
+        assert!(s.can_undo());
+    }
+
+    // ---- scope-filtered find_in_rows ---------------------------------------
+
+    #[test]
+    fn find_in_rows_filters_by_scope() {
+        let (s, _p) = session("hit\nhit\nhit\n");
+        let scope = SpanScope {
+            start_row: 1,
+            start_col: 0,
+            end_row: 2,
+            end_col: 3,
+        };
+        let m = s.find_in_rows(query("hit"), 0, 10, Some(scope)).unwrap();
+        assert_eq!(m.len(), 2, "the row-0 match is outside the scope");
+        assert_eq!(m[0].start_row, 1);
+        assert_eq!(m[1].start_row, 2);
+    }
+
+    #[test]
+    fn find_in_rows_scope_respects_columns() {
+        // Only the second "hit" on row 0 starts at or after column 4.
+        let (s, _p) = session("hit hit\n");
+        let scope = SpanScope {
+            start_row: 0,
+            start_col: 4,
+            end_row: 0,
+            end_col: 7,
+        };
+        let m = s.find_in_rows(query("hit"), 0, 10, Some(scope)).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].start_col, 4);
+    }
+
+    #[test]
+    fn find_in_rows_excludes_match_crossing_scope_end() {
+        // The match starts inside the scope but ends past its end column.
+        let (s, _p) = session("hit\n");
+        let scope = SpanScope {
+            start_row: 0,
+            start_col: 0,
+            end_row: 0,
+            end_col: 2,
+        };
+        let m = s.find_in_rows(query("hit"), 0, 10, Some(scope)).unwrap();
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn scope_row_bounds_clamps_the_scan_range_to_the_scope() {
+        // The clamping itself. `find_in_rows`, `count_matches` and
+        // `replace_all_in_rows` all narrow their scan range through this, so
+        // paging towards a selection far down a large document does no
+        // per-window work before reaching it. Note this is a *performance*
+        // property: clamping changes no output, because everything it skips
+        // would have been filtered out by `span_in_scope` anyway. That is why
+        // it is pinned here, at the one place the arithmetic lives, rather
+        // than through an output assertion that could not tell the
+        // difference.
+        let scope = SpanScope {
+            start_row: 100,
+            start_col: 3,
+            end_row: 101,
+            end_col: 6,
+        };
+        // end_row is inclusive, so the exclusive upper bound is end_row + 1.
+        assert_eq!(
+            EditSession::scope_row_bounds(&Some(scope.clone()), 200),
+            (100, 102)
+        );
+        // Both ends clamp to the document.
+        assert_eq!(
+            EditSession::scope_row_bounds(&Some(scope), 50),
+            (50, 50),
+            "a scope past the document end must yield an empty range"
+        );
+        // Without a scope the whole document is in range.
+        assert_eq!(EditSession::scope_row_bounds(&None, 200), (0, 200));
+    }
+
+    #[test]
+    fn find_in_rows_returns_nothing_for_windows_outside_the_scope() {
+        // `n_row_document` puts "rowN" on row N.
+        let content = n_row_document(200);
+        let (s, _p) = session(&content);
+        let scope = SpanScope {
+            start_row: 100,
+            start_col: 0,
+            end_row: 101,
+            end_col: 6,
+        };
+        // Window [0, 50): entirely before the scope.
+        let before = s
+            .find_in_rows(regex_query("row1..", false), 0, 50, Some(scope.clone()))
+            .unwrap();
+        assert!(before.is_empty(), "a window before the scope must be empty");
+        // Window [150, 200): entirely after the scope.
+        let after = s
+            .find_in_rows(regex_query("row1..", false), 150, 200, Some(scope.clone()))
+            .unwrap();
+        assert!(after.is_empty(), "a window after the scope must be empty");
+        // A window spanning the whole document yields only the scoped rows.
+        let all = s
+            .find_in_rows(regex_query("row1..", false), 0, 200, Some(scope))
+            .unwrap();
+        let rows: Vec<usize> = all.iter().map(|m| m.start_row).collect();
+        assert_eq!(rows, vec![100, 101]);
+    }
+
+    // ---- multi-row expand_for_span -----------------------------------------
+
+    #[test]
+    fn replace_span_expands_captures_across_two_rows() {
+        // `expand_for_span` has to reassemble the matched text from two rows
+        // (re-inserting the '\n') before the pattern can be re-run against it
+        // for its capture groups.
+        let (mut s, _p) = session("alpha\nbeta\ngamma\n");
+        let q = regex_query(r"(\w+)\n(\w+)", true);
+        let spans = s.find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None).unwrap();
+        assert_eq!(spans.len(), 1, "one two-row match");
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        assert_eq!((first.start_row, first.end_row), (0, 1));
+        s.replace_span(q, first, "$2-$1".to_string()).unwrap();
+        assert_eq!(doc(&s), "beta-alpha\ngamma\n");
+    }
+
+    #[test]
+    fn replace_span_expands_captures_across_two_rows_with_multibyte_chars() {
+        // Emoji on BOTH boundary rows: the start column is a UTF-16 column
+        // into a row whose leading char is 2 code units / 4 bytes, and the end
+        // column likewise -- so `u16_to_byte` must be right on both ends or
+        // the reassembled text won't re-match the pattern.
+        let (mut s, _p) = session("😀alpha\nbeta😀\ntail\n");
+        let q = regex_query(r"(\w+)\n(\w+)", true);
+        let spans = s.find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None).unwrap();
+        assert_eq!(spans.len(), 1);
+        let first = MatchSpan {
+            start_row: spans[0].start_row,
+            start_col: spans[0].start_col,
+            end_row: spans[0].end_row,
+            end_col: spans[0].end_col,
+        };
+        // "😀" is 2 UTF-16 units, so "alpha" starts at column 2 on row 0 and
+        // "beta" ends at column 4 on row 1 (before that row's trailing emoji).
+        assert_eq!((first.start_row, first.start_col), (0, 2));
+        assert_eq!((first.end_row, first.end_col), (1, 4));
+        s.replace_span(q, first, "$2-$1".to_string()).unwrap();
+        assert_eq!(doc(&s), "😀beta-alpha😀\ntail\n");
     }
 }

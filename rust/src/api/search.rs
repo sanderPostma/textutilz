@@ -53,6 +53,17 @@ pub struct SpanScope {
     pub end_col: usize,
 }
 
+impl Clone for SpanScope {
+    fn clone(&self) -> Self {
+        SpanScope {
+            start_row: self.start_row,
+            start_col: self.start_col,
+            end_row: self.end_row,
+            end_col: self.end_col,
+        }
+    }
+}
+
 /// Expand `\n \r \t \0 \\ \xHH \uXXXX`. An unrecognized escape is an error
 /// rather than a silent literal, so a typo surfaces in the panel.
 pub fn unescape_extended(s: &str) -> anyhow::Result<String> {
@@ -77,8 +88,7 @@ pub fn unescape_extended(s: &str) -> anyhow::Result<String> {
                 if hex.len() != 2 {
                     anyhow::bail!("\\x needs 2 hex digits");
                 }
-                let v = u8::from_str_radix(&hex, 16)
-                    .map_err(|_| anyhow::anyhow!("bad \\x escape: \\x{}", hex))?;
+                let v = u8::from_str_radix(&hex, 16)?;
                 out.push(v as char);
             }
             'u' => {
@@ -86,8 +96,7 @@ pub fn unescape_extended(s: &str) -> anyhow::Result<String> {
                 if hex.len() != 4 {
                     anyhow::bail!("\\u needs 4 hex digits");
                 }
-                let v = u32::from_str_radix(&hex, 16)
-                    .map_err(|_| anyhow::anyhow!("bad \\u escape: \\u{}", hex))?;
+                let v = u32::from_str_radix(&hex, 16)?;
                 out.push(
                     char::from_u32(v)
                         .ok_or_else(|| anyhow::anyhow!("invalid code point \\u{}", hex))?,
