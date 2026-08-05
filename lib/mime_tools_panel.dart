@@ -454,12 +454,36 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
         ),
         FilledButton.icon(
           icon: const Icon(Icons.play_arrow, size: 16),
-          label: const Text('Apply'),
+          // Live label: the Encode/Decode selector above changes which
+          // operation this button runs, so a constant 'Apply' would lie.
+          label: Text('Apply · ${_currentOp.label}',
+              style: const TextStyle(fontSize: 13)),
+          style: _denseButtonStyle,
           onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
         ),
       ],
     );
   }
+
+  /// Material's default 48px tap target makes each wrap run of this bar 48px
+  /// tall on its own, well over the docked bar's height budget (see the
+  /// ceilings in test/tool_bar_layout_test.dart). shrinkWrap + compact density
+  /// brings a run to ~32px while keeping the controls comfortably clickable.
+  static final ButtonStyle _denseButtonStyle = FilledButton.styleFrom(
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    minimumSize: Size.zero,
+  );
+
+  static const ButtonStyle _denseSegmentedStyle = ButtonStyle(
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    padding: WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    ),
+    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
+  );
 
   List<Widget> _optionWidgets(ColorScheme scheme) {
     switch (widget.category) {
@@ -482,7 +506,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
       ],
       selected: {decode},
       showSelectedIcon: false,
-      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      style: _denseSegmentedStyle,
       onSelectionChanged: (s) => onChanged(s.first),
     );
   }
@@ -544,7 +568,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
           ],
           selected: {_urlVariant},
           showSelectedIcon: false,
-          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          style: _denseSegmentedStyle,
           onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
         ),
         _check('By line', _urlByLine, (v) => setState(() => _urlByLine = v)),
