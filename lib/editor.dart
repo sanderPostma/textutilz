@@ -100,6 +100,7 @@ class CustomEditorState extends State<CustomEditor> {
     LogicalKeyboardKey.keyW,
     LogicalKeyboardKey.keyN,
     LogicalKeyboardKey.keyF,
+    LogicalKeyboardKey.keyR,
     LogicalKeyboardKey.keyH,
   };
 

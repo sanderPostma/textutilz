@@ -802,6 +802,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       case LogicalKeyboardKey.keyF:
         _openFind(FindPanelMode.find);
         return KeyEventResult.handled;
+      // Ctrl+R is the documented binding (shown in the Search menu); Ctrl+H is
+      // kept as an unlisted alias for Notepad++ / VS Code muscle memory.
+      case LogicalKeyboardKey.keyR:
       case LogicalKeyboardKey.keyH:
         _openFind(FindPanelMode.replace);
         return KeyEventResult.handled;
