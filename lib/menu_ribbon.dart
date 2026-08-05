@@ -419,7 +419,17 @@ class _MenuRibbonState extends State<MenuRibbon> {
           title: 'Tools',
           accent: _toolsAccent,
           entries: [
-            entry('tools.mime'),
+            // The seven MIME tools are listed individually, like the edit
+            // tools above: each opens its own docked bar. The old aggregate
+            // 'MIME tools' entry opened a ribbon panel instead, which is what
+            // this feature set out to remove.
+            entry('mime.base64.encode'),
+            entry('mime.base64.decode'),
+            entry('mime.qp.encode'),
+            entry('mime.qp.decode'),
+            entry('mime.url.encode'),
+            entry('mime.url.decode'),
+            entry('mime.saml.decode'),
             entry('tools.jwt'),
             entry('tools.hex'),
           ],
@@ -485,18 +495,6 @@ class _MenuRibbonState extends State<MenuRibbon> {
             defaultName: widget.newDocDefaultName,
             onCancel: _closePanel,
             onCreate: (req) => widget.onCreateDocument?.call(req),
-          ),
-        );
-      case 'mime':
-        return RibbonPanelScaffold(
-          key: const ValueKey('panel-mime'),
-          title: 'MIME tools',
-          onBack: _closePanel,
-          scheme: scheme,
-          child: MimeToolsPanel(
-            enabled: widget.mimeToolsEnabled,
-            hasSelection: widget.mimeHasSelection,
-            onRun: (op) => widget.onRunMimeOp?.call(op),
           ),
         );
       // The 11 mime.*/edit.* panel ids do NOT appear here: _openCommandPanel

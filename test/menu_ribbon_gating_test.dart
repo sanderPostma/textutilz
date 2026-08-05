@@ -67,8 +67,42 @@ void main() {
     expect(opened, ['edit.blank']);
   });
 
-  /// The mime.* commands live only in the search results — no menu column
-  /// lists them — so this is the ONLY route to a MIME bar from the ribbon.
+  /// The Tools column lists the seven MIME operations individually. It used to
+  /// carry a single aggregate 'MIME tools' entry opening the old ribbon panel,
+  /// which meant the docked bars shipped unreachable from the menu: search was
+  /// their only route, and every user who went through the menu got the panel
+  /// this feature set out to replace. These two tests are that bug's guard.
+  testWidgets('menu-table MIME entry opens a bar when mime is enabled',
+      (tester) async {
+    final opened = <String>[];
+    await pumpWide(
+        tester,
+        host(editEnabled: true, mimeEnabled: true, onOpen: opened.add));
+    await tester.tap(find.text('Base64 Encode'));
+    await tester.pumpAndSettle();
+    expect(opened, ['mime.base64.encode']);
+  });
+
+  testWidgets('the aggregate MIME tools entry is gone from the menu',
+      (tester) async {
+    await pumpWide(
+        tester,
+        host(editEnabled: true, mimeEnabled: true, onOpen: (_) {}));
+    expect(find.text('MIME tools'), findsNothing);
+    // All seven operations are individually reachable.
+    for (final label in const [
+      'Base64 Encode',
+      'Base64 Decode',
+      'Quoted-printable Encode',
+      'Quoted-printable Decode',
+      'URL Encode',
+      'URL Decode',
+      'SAML Decode',
+    ]) {
+      expect(find.text(label), findsOneWidget, reason: '$label missing');
+    }
+  });
+
   Future<void> search(WidgetTester tester, String query) async {
     await tester.enterText(find.byType(TextField).first, query);
     await tester.pumpAndSettle();
