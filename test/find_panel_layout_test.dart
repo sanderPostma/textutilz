@@ -70,14 +70,31 @@ void main() {
     await tester.pump();
   }
 
+  /// Asserts the controls the brief calls out as most important — the query
+  /// field, the step arrows, and the close button — are all actually present
+  /// and findable, not merely that nothing threw. A layout that avoided the
+  /// overflow by clipping or hiding those controls would pass a bare
+  /// `takeException() == null` check but fail this.
+  void expectCoreControlsUsable(WidgetTester tester) {
+    expect(tester.takeException(), isNull,
+        reason: 'the panel must not throw a RenderFlex overflow at 500px');
+    expect(find.byTooltip('Find what'), findsOneWidget,
+        reason: 'the query field must still be present and reachable');
+    expect(find.byTooltip('Previous match (Shift+F3)'), findsOneWidget,
+        reason: 'the ▲ step arrow must still be present and reachable');
+    expect(find.byTooltip('Next match (F3)'), findsOneWidget,
+        reason: 'the ▼ step arrow must still be present and reachable');
+    expect(find.byTooltip('Close (Esc)'), findsOneWidget,
+        reason: 'the close button must still be present and reachable');
+  }
+
   testWidgets('find panel does not overflow a narrow window', (tester) async {
     final controller = await controllerOver(tester, 'hit\nhit\n');
     addTearDown(controller.dispose);
 
     await pumpNarrow(tester, controller);
 
-    expect(tester.takeException(), isNull,
-        reason: 'the find row must not throw a RenderFlex overflow at 500px');
+    expectCoreControlsUsable(tester);
   });
 
   testWidgets('replace panel does not overflow a narrow window', (
@@ -89,8 +106,6 @@ void main() {
 
     await pumpNarrow(tester, controller);
 
-    expect(tester.takeException(), isNull,
-        reason:
-            'the replace row must not throw a RenderFlex overflow at 500px');
+    expectCoreControlsUsable(tester);
   });
 }

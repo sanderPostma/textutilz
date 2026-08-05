@@ -110,6 +110,197 @@ class FindPanelState extends State<FindPanel> {
     );
   }
 
+  /// Below this available width the panel switches from a single-line `Row`
+  /// (with the close button pinned to the far right via `Spacer`) to a
+  /// `Wrap` that reflows onto extra lines instead of overflowing. The full
+  /// row (icon, mode toggle, 260px query field, five option toggles, the
+  /// search-mode dropdown, both step arrows, the counter, and Count) needs
+  /// ~1014px of content width to lay out on one line without overflowing —
+  /// measured empirically by probing widths in 20-30px steps and watching
+  /// for `RenderFlex overflowed`. 1024 leaves headroom above that measured
+  /// point, and is comfortably above the 500px width the narrow-window
+  /// regression test exercises.
+  static const double _wideLayoutThreshold = 1024;
+
+  Widget _leadingIcon() => const Icon(Icons.search, size: 16);
+
+  Widget _modeToggle() => Tooltip(
+    message: c.mode == FindPanelMode.find
+        ? 'Switch to Replace'
+        : 'Switch to Find',
+    child: IconButton(
+      icon: Icon(
+        c.mode == FindPanelMode.find
+            ? Icons.keyboard_arrow_right
+            : Icons.keyboard_arrow_down,
+        size: 16,
+      ),
+      visualDensity: VisualDensity.compact,
+      onPressed: () => c.setMode(
+        c.mode == FindPanelMode.find
+            ? FindPanelMode.replace
+            : FindPanelMode.find,
+      ),
+    ),
+  );
+
+  Widget _queryField(bool hasError) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 260,
+      child: Tooltip(
+        message: c.regexError ?? 'Find what',
+        child: TextField(
+          controller: c.query,
+          focusNode: _queryFocus,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Find what…',
+            border: const OutlineInputBorder(),
+            enabledBorder: hasError
+                ? OutlineInputBorder(
+                    borderSide: BorderSide(color: scheme.error),
+                  )
+                : null,
+          ),
+          onChanged: (_) => c.scheduleRefresh(),
+          onSubmitted: (_) => _next(),
+        ),
+      ),
+    );
+  }
+
+  /// The option toggles plus the search-mode dropdown — the middle cluster
+  /// that's least critical to keep pinned, so it's the first thing allowed
+  /// to wrap or compress when space is tight.
+  List<Widget> _optionWidgets() => [
+    _toggle(
+      label: 'Aa',
+      tooltip: 'Match case',
+      value: c.matchCase,
+      onChanged: (v) {
+        setState(() => c.matchCase = v);
+        c.scheduleRefresh();
+      },
+    ),
+    _toggle(
+      label: 'ab|',
+      tooltip: 'Match whole word only',
+      value: c.wholeWord,
+      onChanged: (v) {
+        setState(() => c.wholeWord = v);
+        c.scheduleRefresh();
+      },
+    ),
+    _toggle(
+      label: '↺',
+      tooltip: 'Wrap around',
+      value: c.wrapAround,
+      onChanged: (v) => setState(() => c.wrapAround = v),
+    ),
+    _toggle(
+      label: '⌗',
+      tooltip: 'In selection',
+      value: c.inSelection,
+      enabled: c.scope != null,
+      onChanged: (v) {
+        setState(() => c.inSelection = v);
+        c.scheduleRefresh();
+      },
+    ),
+    _toggle(
+      label: '. *',
+      tooltip: '. matches newline (regex mode only)',
+      value: c.dotMatchesNewline,
+      enabled: c.searchMode == SearchMode.regex,
+      onChanged: (v) {
+        setState(() => c.dotMatchesNewline = v);
+        c.scheduleRefresh();
+      },
+    ),
+    _searchModeSelector(),
+  ];
+
+  /// Step arrows, the match counter, and the Count button — kept together
+  /// since the counter is only meaningful next to the arrows that move it.
+  List<Widget> _navWidgets(bool hasError) {
+    final scheme = Theme.of(context).colorScheme;
+    return [
+      IconButton(
+        icon: const Icon(Icons.keyboard_arrow_up, size: 18),
+        tooltip: 'Previous match (Shift+F3)',
+        onPressed: c.canStepBackward ? _prev : null,
+        visualDensity: VisualDensity.compact,
+      ),
+      IconButton(
+        icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+        tooltip: 'Next match (F3)',
+        onPressed: c.canStepForward ? _next : null,
+        visualDensity: VisualDensity.compact,
+      ),
+      Text(
+        c.counterLabel,
+        style: TextStyle(
+          fontSize: 12,
+          color: hasError ? scheme.error : scheme.onSurfaceVariant,
+        ),
+      ),
+      Tooltip(
+        message: 'Count all matches',
+        child: TextButton(
+          onPressed: c.query.text.isEmpty || hasError ? null : c.recount,
+          child: const Text('Count'),
+        ),
+      ),
+    ];
+  }
+
+  Widget _closeButton() => IconButton(
+    icon: const Icon(Icons.close, size: 18),
+    tooltip: 'Close (Esc)',
+    onPressed: widget.onClose,
+    visualDensity: VisualDensity.compact,
+  );
+
+  /// Normal-width layout: a single-line `Row` with the close button pinned
+  /// to the far right via `Spacer`, matching the panel's original look.
+  Widget _findRowWide(bool hasError) {
+    return Row(
+      spacing: 6,
+      children: [
+        _leadingIcon(),
+        _modeToggle(),
+        _queryField(hasError),
+        ..._optionWidgets(),
+        ..._navWidgets(hasError),
+        const Spacer(),
+        _closeButton(),
+      ],
+    );
+  }
+
+  /// Narrow-width layout: everything in one `Wrap` so controls reflow onto
+  /// extra lines instead of throwing a `RenderFlex overflowed` error. The
+  /// close button is no longer pinned to a hard right edge here — there is
+  /// no space to reserve for that — but it stays reachable at the end of
+  /// the flow.
+  Widget _findRowNarrow(bool hasError) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        _leadingIcon(),
+        _modeToggle(),
+        _queryField(hasError),
+        ..._optionWidgets(),
+        ..._navWidgets(hasError),
+        _closeButton(),
+      ],
+    );
+  }
+
   Widget _searchModeSelector() {
     return Tooltip(
       message: 'Search mode',
@@ -143,136 +334,15 @@ class FindPanelState extends State<FindPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              const Icon(Icons.search, size: 16),
-              Tooltip(
-                message: c.mode == FindPanelMode.find
-                    ? 'Switch to Replace'
-                    : 'Switch to Find',
-                child: IconButton(
-                  icon: Icon(
-                    c.mode == FindPanelMode.find
-                        ? Icons.keyboard_arrow_right
-                        : Icons.keyboard_arrow_down,
-                    size: 16,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => c.setMode(
-                    c.mode == FindPanelMode.find
-                        ? FindPanelMode.replace
-                        : FindPanelMode.find,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 260,
-                child: Tooltip(
-                  message: c.regexError ?? 'Find what',
-                  child: TextField(
-                    controller: c.query,
-                    focusNode: _queryFocus,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'Find what…',
-                      border: const OutlineInputBorder(),
-                      enabledBorder: hasError
-                          ? OutlineInputBorder(
-                              borderSide: BorderSide(color: scheme.error),
-                            )
-                          : null,
-                    ),
-                    onChanged: (_) => c.scheduleRefresh(),
-                    onSubmitted: (_) => _next(),
-                  ),
-                ),
-              ),
-              _toggle(
-                label: 'Aa',
-                tooltip: 'Match case',
-                value: c.matchCase,
-                onChanged: (v) {
-                  setState(() => c.matchCase = v);
-                  c.scheduleRefresh();
-                },
-              ),
-              _toggle(
-                label: 'ab|',
-                tooltip: 'Match whole word only',
-                value: c.wholeWord,
-                onChanged: (v) {
-                  setState(() => c.wholeWord = v);
-                  c.scheduleRefresh();
-                },
-              ),
-              _toggle(
-                label: '↺',
-                tooltip: 'Wrap around',
-                value: c.wrapAround,
-                onChanged: (v) => setState(() => c.wrapAround = v),
-              ),
-              _toggle(
-                label: '⌗',
-                tooltip: 'In selection',
-                value: c.inSelection,
-                enabled: c.scope != null,
-                onChanged: (v) {
-                  setState(() => c.inSelection = v);
-                  c.scheduleRefresh();
-                },
-              ),
-              _toggle(
-                label: '. *',
-                tooltip: '. matches newline (regex mode only)',
-                value: c.dotMatchesNewline,
-                enabled: c.searchMode == SearchMode.regex,
-                onChanged: (v) {
-                  setState(() => c.dotMatchesNewline = v);
-                  c.scheduleRefresh();
-                },
-              ),
-              _searchModeSelector(),
-              IconButton(
-                icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-                tooltip: 'Previous match (Shift+F3)',
-                onPressed: c.canStepBackward ? _prev : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                tooltip: 'Next match (F3)',
-                onPressed: c.canStepForward ? _next : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              Text(
-                c.counterLabel,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: hasError ? scheme.error : scheme.onSurfaceVariant,
-                ),
-              ),
-              Tooltip(
-                message: 'Count all matches',
-                child: TextButton(
-                  onPressed: c.query.text.isEmpty || hasError
-                      ? null
-                      : c.recount,
-                  child: const Text('Count'),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                tooltip: 'Close (Esc)',
-                onPressed: widget.onClose,
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return constraints.maxWidth >= _wideLayoutThreshold
+                  ? _findRowWide(hasError)
+                  : _findRowNarrow(hasError);
+            },
           ),
-          if (c.mode == FindPanelMode.replace)
+          if (c.mode == FindPanelMode.replace) ...[
+            const SizedBox(height: 4),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 6,
@@ -317,6 +387,7 @@ class FindPanelState extends State<FindPanel> {
                 ),
               ],
             ),
+          ],
         ],
       ),
     );
