@@ -121,6 +121,35 @@ adopts `DockedBar` for the chrome but passes no title, so no tab appears. Giving
 find a "Find"/"Replace" tab later is a one-argument change; it is out of scope
 here because it was not asked for.
 
+### Placement — above the document tab bar
+
+Both bars dock **between the window chrome and the document tab bar**, not
+between the tab bar and the editor:
+
+```
+┌───────────────────────────────────────┐
+│ ☰  Read | Tail | ✓Edit        ☀ ─ □ │  window chrome
+├────────╭─ Comment/Uncomment ─╮────────┤  ← the tab hangs from the chrome
+│ [Toggle] [Block Comment] [Block Unc] ✕│  tool bar
+├───────────────────────────────────────┤
+│ notes.txt │ main.rs │                 │  document tabs
+├───────────────────────────────────────┤
+│ 1  the document…                      │  editor
+└───────────────────────────────────────┘
+```
+
+The title tab must hang from the window chrome to read correctly. Docked below
+the document tab bar it would appear to dangle off the file tabs, which looks
+like a rendering bug rather than a design.
+
+**The find bar moves up with it.** The two bars occupy the same slot — they are
+mutually exclusive, they share `DockedBar`, and leaving one above the tabs and
+one below would be an arbitrary inconsistency. The find bar's appearance is
+unchanged; only where it sits in the column moves.
+
+Because that slot is outside the view-mode branch, both bars carry an explicit
+`ViewMode.edit` guard that the old placement got for free from its position.
+
 ### The title tab
 
 A centered pill with rounded *bottom* corners, painted in the bar's surface
