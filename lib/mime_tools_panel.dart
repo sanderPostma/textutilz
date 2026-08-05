@@ -438,33 +438,31 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildBody(scheme),
-            const SizedBox(height: 20),
-            _buildSharedBar(scheme),
-          ],
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ..._optionWidgets(scheme),
+        FilledButton.icon(
+          icon: const Icon(Icons.play_arrow, size: 16),
+          label: const Text('Apply'),
+          onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildBody(ColorScheme scheme) {
+  List<Widget> _optionWidgets(ColorScheme scheme) {
     switch (widget.category) {
       case MimeCategory.base64:
-        return _buildBase64(scheme);
+        return _base64Options(scheme);
       case MimeCategory.quotedPrintable:
-        return _buildQuotedPrintable(scheme);
+        return _quotedPrintableOptions(scheme);
       case MimeCategory.url:
-        return _buildUrl(scheme);
+        return _urlOptions(scheme);
       case MimeCategory.saml:
-        return _buildSaml(scheme);
+        return _samlOptions(scheme);
     }
   }
 
@@ -508,98 +506,60 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
     );
   }
 
-  Widget _buildBase64(ColorScheme scheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _modeSelector(_decode, (v) => setState(() => _decode = v)),
-        const SizedBox(height: 12),
-        Wrap(
-          runSpacing: 4,
-          children: _decode
-              ? [
-                  _check('Strict', _b64Strict, (v) => setState(() => _b64Strict = v)),
-                  _check('By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
-                ]
-              : [
-                  _check('Padding', _b64Padding, (v) => setState(() => _b64Padding = v)),
-                  _check('Unix EOL', _b64UnixEol, (v) => setState(() => _b64UnixEol = v)),
-                  _check('By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
-                ],
-        ),
+  List<Widget> _base64Options(ColorScheme scheme) {
+    return [
+      _modeSelector(_decode, (v) => setState(() => _decode = v)),
+      if (_decode) ...[
+        _check('Strict', _b64Strict, (v) => setState(() => _b64Strict = v)),
+        _check('By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
+      ] else ...[
+        _check('Padding', _b64Padding, (v) => setState(() => _b64Padding = v)),
+        _check('Unix EOL', _b64UnixEol, (v) => setState(() => _b64UnixEol = v)),
+        _check('By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
       ],
-    );
+    ];
   }
 
-  Widget _buildQuotedPrintable(ColorScheme scheme) {
-    return _modeSelector(_decode, (v) => setState(() => _decode = v));
+  List<Widget> _quotedPrintableOptions(ColorScheme scheme) {
+    return [_modeSelector(_decode, (v) => setState(() => _decode = v))];
   }
 
-  Widget _buildUrl(ColorScheme scheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _modeSelector(_decode, (v) => setState(() => _decode = v)),
-        if (!_decode) ...[
-          const SizedBox(height: 12),
-          SegmentedButton<UrlEncodeVariant>(
-            segments: const [
-              ButtonSegment(value: UrlEncodeVariant.rfc1738, label: Text('RFC1738')),
-              ButtonSegment(value: UrlEncodeVariant.extended, label: Text('Extended')),
-              ButtonSegment(value: UrlEncodeVariant.full, label: Text('Full')),
-            ],
-            selected: {_urlVariant},
-            showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
+  List<Widget> _urlOptions(ColorScheme scheme) {
+    return [
+      _modeSelector(_decode, (v) => setState(() => _decode = v)),
+      if (!_decode) ...[
+        SegmentedButton<UrlEncodeVariant>(
+          segments: const [
+            ButtonSegment(value: UrlEncodeVariant.rfc1738, label: Text('RFC1738')),
+            ButtonSegment(value: UrlEncodeVariant.extended, label: Text('Extended')),
+            ButtonSegment(value: UrlEncodeVariant.full, label: Text('Full')),
+          ],
+          selected: {_urlVariant},
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
+        ),
+        _check('By line', _urlByLine, (v) => setState(() => _urlByLine = v)),
+      ],
+    ];
+  }
+
+  List<Widget> _samlOptions(ColorScheme scheme) {
+    return [
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Base64-decode then raw-inflate (HTTP-Redirect binding); '
+              'plain base64 tokens (POST binding) pass through.',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
           ),
-          const SizedBox(height: 8),
-          _check('By line', _urlByLine, (v) => setState(() => _urlByLine = v)),
         ],
-      ],
-    );
-  }
-
-  Widget _buildSaml(ColorScheme scheme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            'Base64-decode then raw-inflate (HTTP-Redirect binding); '
-            'plain base64 tokens (POST binding) pass through.',
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSharedBar(ColorScheme scheme) {
-    final op = _currentOp;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            widget.enabled
-                ? (widget.hasSelection
-                    ? 'Transforms the selection.'
-                    : 'Transforms the whole document.')
-                : 'Open a document in Edit mode to run MIME tools.',
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
-        ),
-        const SizedBox(width: 12),
-        FilledButton.icon(
-          onPressed: widget.enabled ? () => widget.onRun(op) : null,
-          icon: const Icon(Icons.play_arrow, size: 18),
-          label: Text('GO · ${op.label}'),
-        ),
-      ],
-    );
+      ),
+    ];
   }
 }
