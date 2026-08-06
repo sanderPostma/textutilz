@@ -64,6 +64,14 @@ pub struct ByteRange {
     pub len: usize,
 }
 
+/// Matches returned by [`HexSession::find_bytes`]. `complete` is false when
+/// the caller's result limit was reached, allowing the UI to stay bounded on
+/// files containing millions of identical bytes.
+pub struct ByteSearchResult {
+    pub offsets: Vec<usize>,
+    pub complete: bool,
+}
+
 /// The editable byte document. See the module docs.
 #[flutter_rust_bridge::frb(opaque)]
 pub struct HexSession {
@@ -216,6 +224,71 @@ impl HexSession {
         ranges
     }
 
+    // ---- byte search -------------------------------------------------------
+
+    /// Find non-overlapping occurrences of `pattern` at or after
+    /// `from_offset`. The piece table is read in bounded windows, so searching
+    /// a multi-GB base file never loads the whole document into memory.
+    ///
+    /// `max_results == 0` means unlimited. Otherwise scanning stops after one
+    /// additional match proves the returned list was truncated.
+    pub fn find_bytes(
+        &self,
+        pattern: Vec<u8>,
+        from_offset: usize,
+        max_results: usize,
+    ) -> anyhow::Result<ByteSearchResult> {
+        const SEARCH_CHUNK: usize = 256 * 1024;
+
+        if pattern.is_empty() || from_offset >= self.total_len || pattern.len() > self.total_len {
+            return Ok(ByteSearchResult {
+                offsets: Vec::new(),
+                complete: true,
+            });
+        }
+
+        let mut offsets = Vec::new();
+        let mut window_start = from_offset;
+        let mut next_allowed = from_offset;
+        while window_start < self.total_len {
+            let primary_end = window_start
+                .saturating_add(SEARCH_CHUNK)
+                .min(self.total_len);
+            let read_end = primary_end
+                .saturating_add(pattern.len().saturating_sub(1))
+                .min(self.total_len);
+            let bytes = self.read_window(window_start, read_end - window_start)?;
+            let mut i = next_allowed.saturating_sub(window_start);
+            while i + pattern.len() <= bytes.len() {
+                let absolute = window_start + i;
+                // Starts in the overlap belong to the following window.
+                if absolute >= primary_end {
+                    break;
+                }
+                if bytes[i..i + pattern.len()] == pattern {
+                    if max_results != 0 && offsets.len() == max_results {
+                        return Ok(ByteSearchResult {
+                            offsets,
+                            complete: false,
+                        });
+                    }
+                    offsets.push(absolute);
+                    i += pattern.len();
+                    next_allowed = absolute + pattern.len();
+                } else {
+                    i += 1;
+                }
+            }
+            window_start = primary_end;
+            next_allowed = next_allowed.max(window_start);
+        }
+
+        Ok(ByteSearchResult {
+            offsets,
+            complete: true,
+        })
+    }
+
     // ---- piece-table mutation (no undo bookkeeping) -------------------------
 
     /// Ensure a piece boundary exists exactly at `offset`; return the index of
@@ -290,7 +363,8 @@ impl HexSession {
             self.pieces.insert(i, p);
             new.push(p);
         }
-        self.total_len = self.total_len - del_len + ins.len();        if i < self.pieces.len() {
+        self.total_len = self.total_len - del_len + ins.len();
+        if i < self.pieces.len() {
             self.merge_around(i);
         } else if i > 0 {
             self.merge_around(i - 1);
@@ -317,7 +391,8 @@ impl HexSession {
             self.pieces.insert(i + k, *p);
         }
         let insert_len = Self::piece_len(insert);
-        self.total_len = self.total_len - remove_len + insert_len;        if i < self.pieces.len() {
+        self.total_len = self.total_len - remove_len + insert_len;
+        if i < self.pieces.len() {
             self.merge_around(i);
         }
         let end = i + insert.len();
@@ -401,6 +476,54 @@ impl HexSession {
         Ok(caret)
     }
 
+    /// Replace one exact byte sequence. The expected bytes guard against a
+    /// stale search result after the document has been edited.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn replace_bytes(
+        &mut self,
+        offset: usize,
+        expected: Vec<u8>,
+        replacement: Vec<u8>,
+    ) -> anyhow::Result<usize> {
+        if expected.is_empty() {
+            anyhow::bail!("the search pattern cannot be empty");
+        }
+        if self.read_window(offset, expected.len())? != expected {
+            anyhow::bail!("bytes at the match offset have changed");
+        }
+        if expected == replacement {
+            return Ok(offset + expected.len());
+        }
+        let edit = self.apply_splice(offset, expected.len(), &replacement);
+        let caret = edit.end_offset;
+        self.record(edit, false);
+        Ok(caret)
+    }
+
+    /// Replace every non-overlapping occurrence as one undo step. Edits are
+    /// applied from the end backwards so earlier byte offsets remain valid.
+    pub fn replace_all_bytes(
+        &mut self,
+        pattern: Vec<u8>,
+        replacement: Vec<u8>,
+    ) -> anyhow::Result<usize> {
+        if pattern.is_empty() {
+            anyhow::bail!("the search pattern cannot be empty");
+        }
+        let found = self.find_bytes(pattern.clone(), 0, 0)?;
+        if found.offsets.is_empty() || pattern == replacement {
+            return Ok(found.offsets.len());
+        }
+
+        self.begin_group();
+        for offset in found.offsets.iter().rev().copied() {
+            let edit = self.apply_splice(offset, pattern.len(), &replacement);
+            self.record(edit, false);
+        }
+        self.end_group();
+        Ok(found.offsets.len())
+    }
+
     /// Break typing coalescing (call on caret moves, clicks, focus changes) so
     /// the next edit starts a fresh undo step.
     #[flutter_rust_bridge::frb(sync)]
@@ -441,7 +564,8 @@ impl HexSession {
         for e in entry.prims.iter().rev() {
             caret = self.undo_edit(e);
         }
-        self.redo.push(entry);        Some(caret)
+        self.redo.push(entry);
+        Some(caret)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -451,7 +575,8 @@ impl HexSession {
         for e in entry.prims.iter() {
             caret = self.redo_edit(e);
         }
-        self.undo.push(entry);        Some(caret)
+        self.undo.push(entry);
+        Some(caret)
     }
 
     // ---- saving -------------------------------------------------------------
@@ -472,7 +597,8 @@ impl HexSession {
         self.total_len = self.base.size;
         self.undo.clear();
         self.redo.clear();
-        self.group = None;    }
+        self.group = None;
+    }
 
     fn save_impl(&mut self, new_path: Option<String>) -> anyhow::Result<()> {
         use std::io::{BufWriter, Seek, SeekFrom, Write};
@@ -568,7 +694,11 @@ mod tests {
     fn session(content: &[u8]) -> (HexSession, String) {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let path = std::env::temp_dir()
-            .join(format!("textutilz_hex_test_{}_{}.bin", std::process::id(), n))
+            .join(format!(
+                "textutilz_hex_test_{}_{}.bin",
+                std::process::id(),
+                n
+            ))
             .to_string_lossy()
             .to_string();
         let mut f = std::fs::File::create(&path).unwrap();
@@ -658,6 +788,54 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn finds_bytes_across_search_window_and_piece_boundaries() {
+        const CHUNK: usize = 256 * 1024;
+        let mut content = vec![b'x'; CHUNK + 20];
+        content[CHUNK - 2..CHUNK + 2].copy_from_slice(b"ABCD");
+        let (mut s, _p) = session(&content);
+        // Split the searched sequence across Add/Base pieces as well as the
+        // internal search window boundary.
+        s.overwrite_bytes(CHUNK - 1, vec![b'B', b'C']).unwrap();
+
+        let found = s.find_bytes(b"ABCD".to_vec(), 0, 10).unwrap();
+        assert_eq!(found.offsets, vec![CHUNK - 2]);
+        assert!(found.complete);
+    }
+
+    #[test]
+    fn find_bytes_is_non_overlapping_and_reports_truncation() {
+        let (s, _p) = session(b"aaaaa");
+        let all = s.find_bytes(b"aa".to_vec(), 0, 0).unwrap();
+        assert_eq!(all.offsets, vec![0, 2]);
+        assert!(all.complete);
+
+        let limited = s.find_bytes(vec![b'a'], 0, 2).unwrap();
+        assert_eq!(limited.offsets, vec![0, 1]);
+        assert!(!limited.complete);
+    }
+
+    #[test]
+    fn replace_bytes_rejects_stale_match() {
+        let (mut s, _p) = session(b"abc");
+        assert!(s.replace_bytes(1, vec![b'x'], vec![b'B']).is_err());
+        assert_eq!(all(&s), b"abc");
+        assert!(!s.is_dirty());
+    }
+
+    #[test]
+    fn replace_all_bytes_is_one_undo_step() {
+        let (mut s, _p) = session(b"one two one");
+        assert_eq!(
+            s.replace_all_bytes(b"one".to_vec(), b"1".to_vec()).unwrap(),
+            2
+        );
+        assert_eq!(all(&s), b"1 two 1");
+        s.undo().unwrap();
+        assert_eq!(all(&s), b"one two one");
+        assert!(!s.can_undo());
     }
 
     #[test]
@@ -830,7 +1008,9 @@ mod tests {
     fn sniff_detects_binary() {
         assert!(!sniff_binary(b"plain ascii text\nwith newlines\t"));
         assert!(sniff_binary(b"has a \0 nul"));
-        assert!(sniff_binary(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]));
+        assert!(sniff_binary(&[
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+        ]));
         assert!(!sniff_binary(b""));
     }
 }

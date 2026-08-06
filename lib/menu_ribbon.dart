@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+
+import 'src/rust/api/structured.dart';
 import 'package:flutter/services.dart';
 import 'package:textutilz/src/rust/api/commands.dart';
 import 'document_state.dart';
 import 'mime_tools_panel.dart';
 import 'edit_tools_panel.dart';
 import 'tool_bar.dart';
+
 class MenuEntry {
   final String label;
   final IconData icon;
@@ -39,12 +42,12 @@ class MenuEntry {
 
   /// A sub-header row grouping the items that follow it within a column.
   const MenuEntry.header(this.label)
-      : icon = Icons.remove,
-        onPressed = null,
-        command = null,
-        shortcut = null,
-        toggled = null,
-        isHeader = true;
+    : icon = Icons.remove,
+      onPressed = null,
+      command = null,
+      shortcut = null,
+      toggled = null,
+      isHeader = true;
 }
 
 /// A menu column: an accent-colored header above a vertical stack of entries.
@@ -84,12 +87,23 @@ class MenuRibbon extends StatefulWidget {
   final VoidCallback? onToggleLineNumbers;
   final VoidCallback? onToggleWordWrap;
 
+  /// Folding. Null when the active document has nothing to fold, which greys
+  /// the entries out the same way every other unavailable command is greyed.
+  final VoidCallback? onFoldAll;
+  final VoidCallback? onUnfoldAll;
+
   /// MIME tools: whether an editor is available to transform, whether it
   /// currently has a (linear) selection to scope to, and the runner invoked
   /// with the chosen operation when the user presses GO.
   final bool mimeToolsEnabled;
   final bool mimeHasSelection;
   final ValueChanged<MimeOp>? onRunMimeOp;
+
+  /// The active document's detected format. The Tools column offers only the
+  /// structured entry that matches it, because "Pretty-print YAML" on an XML
+  /// document is never the thing the user wants. Plain text offers all of them,
+  /// since nothing has been detected to narrow by.
+  final StructuredLanguage markupLanguage;
 
   /// NPP Edit tools properties.
   final bool editToolsEnabled;
@@ -124,9 +138,11 @@ class MenuRibbon extends StatefulWidget {
   final VoidCallback? onCopyFileName;
   final VoidCallback? onCopyFilePath;
 
-  /// Open the find/replace panel in Find or Replace mode.
+  /// Open the find/replace panel in Find or Replace mode, or Mark mode, or run Find All.
   final VoidCallback? onFind;
   final VoidCallback? onReplace;
+  final VoidCallback? onMark;
+  final VoidCallback? onFindAll;
 
   /// The active tab's current auto-delete policy (for the Auto-delete panel's
   /// selected radio), and the setter invoked when the user picks one.
@@ -138,6 +154,7 @@ class MenuRibbon extends StatefulWidget {
   final ValueChanged<String>? onOpenToolBar;
 
   const MenuRibbon({
+    this.markupLanguage = StructuredLanguage.plainText,
     super.key,
     this.onOpen,
     this.onSave,
@@ -151,6 +168,8 @@ class MenuRibbon extends StatefulWidget {
     this.wordWrap = false,
     this.onToggleLineNumbers,
     this.onToggleWordWrap,
+    this.onFoldAll,
+    this.onUnfoldAll,
     this.mimeToolsEnabled = false,
     this.mimeHasSelection = false,
     this.onRunMimeOp,
@@ -170,6 +189,8 @@ class MenuRibbon extends StatefulWidget {
     this.onCopyFilePath,
     this.onFind,
     this.onReplace,
+    this.onMark,
+    this.onFindAll,
     this.currentAutoDelete,
     this.onSetAutoDelete,
     this.onOpenToolBar,
@@ -195,7 +216,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
     if (widget.autoOpenNew) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final cmd = _registry.commands.cast<CommandDescriptor?>().firstWhere((c) => c?.id == 'file.new', orElse: () => null);
+        final cmd = _registry.commands.cast<CommandDescriptor?>().firstWhere(
+          (c) => c?.id == 'file.new',
+          orElse: () => null,
+        );
         if (cmd != null) _openCommandPanel(cmd);
       });
     } else {
@@ -210,8 +234,13 @@ class _MenuRibbonState extends State<MenuRibbon> {
   void didUpdateWidget(MenuRibbon oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Ribbon already visible and Ctrl+N pressed: jump to the New panel.
-    if (!oldWidget.autoOpenNew && widget.autoOpenNew && _activeCommand == null) {
-      final cmd = _registry.commands.cast<CommandDescriptor?>().firstWhere((c) => c?.id == 'file.new', orElse: () => null);
+    if (!oldWidget.autoOpenNew &&
+        widget.autoOpenNew &&
+        _activeCommand == null) {
+      final cmd = _registry.commands.cast<CommandDescriptor?>().firstWhere(
+        (c) => c?.id == 'file.new',
+        orElse: () => null,
+      );
       if (cmd != null) _openCommandPanel(cmd);
     }
   }
@@ -269,58 +298,123 @@ class _MenuRibbonState extends State<MenuRibbon> {
 
   IconData _parseIcon(String? iconName) {
     switch (iconName) {
-      case 'note_add': return Icons.note_add;
-      case 'folder_open': return Icons.folder_open;
-      case 'save': return Icons.save;
-      case 'tab_unselected': return Icons.tab_unselected;
-      case 'undo': return Icons.undo;
-      case 'redo': return Icons.redo;
-      case 'content_cut': return Icons.content_cut;
-      case 'content_copy': return Icons.content_copy;
-      case 'content_paste': return Icons.content_paste;
-      case 'search': return Icons.search;
-      case 'find_replace': return Icons.find_replace;
-      case 'my_location': return Icons.my_location;
-      case 'format_list_numbered': return Icons.format_list_numbered;
-      case 'wrap_text': return Icons.wrap_text;
-      case 'transform': return Icons.transform;
-      case 'format_size': return Icons.format_size;
-      case 'keyboard_return': return Icons.keyboard_return;
-      case 'space_bar': return Icons.space_bar;
-      case 'comment': return Icons.comment;
-      case 'memory': return Icons.memory;
-      case 'save_as': return Icons.save_as;
-      case 'clear_all': return Icons.clear_all;
-      case 'keyboard_tab': return Icons.keyboard_tab;
-      case 'drive_file_rename_outline': return Icons.drive_file_rename_outline;
-      case 'folder_copy': return Icons.folder_copy;
-      case 'auto_delete': return Icons.auto_delete;
-      default: return Icons.extension;
+      case 'note_add':
+        return Icons.note_add;
+      case 'folder_open':
+        return Icons.folder_open;
+      case 'save':
+        return Icons.save;
+      case 'tab_unselected':
+        return Icons.tab_unselected;
+      case 'undo':
+        return Icons.undo;
+      case 'redo':
+        return Icons.redo;
+      case 'content_cut':
+        return Icons.content_cut;
+      case 'content_copy':
+        return Icons.content_copy;
+      case 'content_paste':
+        return Icons.content_paste;
+      case 'search':
+        return Icons.search;
+      case 'find_replace':
+        return Icons.find_replace;
+      case 'my_location':
+        return Icons.my_location;
+      case 'format_list_numbered':
+        return Icons.format_list_numbered;
+      case 'wrap_text':
+        return Icons.wrap_text;
+      case 'unfold_less':
+        return Icons.unfold_less;
+      case 'unfold_more':
+        return Icons.unfold_more;
+      case 'transform':
+        return Icons.transform;
+      case 'data_object':
+        return Icons.data_object;
+      case 'format_size':
+        return Icons.format_size;
+      case 'keyboard_return':
+        return Icons.keyboard_return;
+      case 'space_bar':
+        return Icons.space_bar;
+      case 'comment':
+        return Icons.comment;
+      case 'memory':
+        return Icons.memory;
+      case 'save_as':
+        return Icons.save_as;
+      case 'clear_all':
+        return Icons.clear_all;
+      case 'keyboard_tab':
+        return Icons.keyboard_tab;
+      case 'drive_file_rename_outline':
+        return Icons.drive_file_rename_outline;
+      case 'folder_copy':
+        return Icons.folder_copy;
+      case 'auto_delete':
+        return Icons.auto_delete;
+      case 'bookmark':
+        return Icons.bookmark;
+      default:
+        return Icons.extension;
     }
   }
 
   VoidCallback? _getAction(String? actionId) {
     switch (actionId) {
-      case 'file.open': return widget.onOpen;
-      case 'file.save': return widget.onSave;
-      case 'file.close': return widget.onCloseTab;
-      case 'edit.undo': return widget.onUndo;
-      case 'edit.redo': return widget.onRedo;
-      case 'edit.cut': return widget.onCut;
-      case 'edit.copy': return widget.onCopy;
-      case 'edit.paste': return widget.onPaste;
-      case 'view.linenumbers': return widget.onToggleLineNumbers;
-      case 'view.wordwrap': return widget.onToggleWordWrap;
-      case 'tools.jwt': return widget.onEnterToolMode != null ? () => widget.onEnterToolMode!('jwt.decode') : null;
-      case 'tools.hex': return widget.onEnterHex;
-      case 'file.saveas': return widget.onSaveAs;
-      case 'tab.closeothers': return widget.onCloseOtherTabs;
-      case 'tab.closeright': return widget.onCloseTabsToRight;
-      case 'tab.copyname': return widget.onCopyFileName;
-      case 'tab.copypath': return widget.onCopyFilePath;
-      case 'search.find': return widget.onFind;
-      case 'search.replace': return widget.onReplace;
-      default: return null;
+      case 'file.open':
+        return widget.onOpen;
+      case 'file.save':
+        return widget.onSave;
+      case 'file.close':
+        return widget.onCloseTab;
+      case 'edit.undo':
+        return widget.onUndo;
+      case 'edit.redo':
+        return widget.onRedo;
+      case 'edit.cut':
+        return widget.onCut;
+      case 'edit.copy':
+        return widget.onCopy;
+      case 'edit.paste':
+        return widget.onPaste;
+      case 'view.linenumbers':
+        return widget.onToggleLineNumbers;
+      case 'view.wordwrap':
+        return widget.onToggleWordWrap;
+      case 'view.foldall':
+        return widget.onFoldAll;
+      case 'view.unfoldall':
+        return widget.onUnfoldAll;
+      case 'tools.jwt':
+        return widget.onEnterToolMode != null
+            ? () => widget.onEnterToolMode!('jwt.decode')
+            : null;
+      case 'tools.hex':
+        return widget.onEnterHex;
+      case 'file.saveas':
+        return widget.onSaveAs;
+      case 'tab.closeothers':
+        return widget.onCloseOtherTabs;
+      case 'tab.closeright':
+        return widget.onCloseTabsToRight;
+      case 'tab.copyname':
+        return widget.onCopyFileName;
+      case 'tab.copypath':
+        return widget.onCopyFilePath;
+      case 'search.find':
+        return widget.onFind;
+      case 'search.replace':
+        return widget.onReplace;
+      case 'search.mark':
+        return widget.onMark;
+      case 'search.findall':
+        return widget.onFindAll;
+      default:
+        return null;
     }
   }
 
@@ -361,75 +455,101 @@ class _MenuRibbonState extends State<MenuRibbon> {
         label: cmd.title,
         icon: _parseIcon(cmd.icon),
         shortcut: cmd.shortcut,
-        toggled: cmd.id == 'view.linenumbers' ? widget.showLineNumbers :
-                 cmd.id == 'view.wordwrap' ? widget.wordWrap : cmd.toggled,
+        toggled: cmd.id == 'view.linenumbers'
+            ? widget.showLineNumbers
+            : cmd.id == 'view.wordwrap'
+            ? widget.wordWrap
+            : cmd.toggled,
         command: cmd,
         onPressed: _entryAction(cmd),
       );
     }
+
     return [
-        MenuColumn(
-          title: 'File',
-          accent: _fileAccent,
-          entries: [
-            entry('file.new'),
-            entry('file.open'),
-            const MenuEntry.header('Current tab'),
-            entry('file.save'),
-            entry('file.saveas'),
-            entry('file.close'),
-            entry('tab.closeothers'),
-            entry('tab.closeright'),
-            entry('tab.copyname'),
-            entry('tab.copypath'),
-            entry('tab.autodelete'),
-          ],
-        ),
-        MenuColumn(
-          title: 'Edit',
-          accent: _editAccent,
-          entries: [
-            entry('edit.undo'),
-            entry('edit.redo'),
-            entry('edit.cut'),
-            entry('edit.copy'),
-            entry('edit.paste'),
-            entry('edit.case'),
-            entry('edit.eol'),
-            entry('edit.blank'),
-            entry('edit.comment'),
-          ],
-        ),
-        MenuColumn(
-          title: 'Search',
-          accent: _searchAccent,
-          entries: [
-            entry('search.find'),
-            entry('search.replace'),
-            entry('search.goto'),
-          ],
-        ),
-        MenuColumn(
-          title: 'View',
-          accent: _viewAccent,
-          entries: [
-            entry('view.linenumbers'),
-            entry('view.wordwrap'),
-          ],
-        ),
-        MenuColumn(
-          title: 'Tools',
-          accent: _toolsAccent,
-          entries: [
-            // One MIME entry, opening the tabbed MIME bar. The seven
-            // per-operation ids stay reachable from search.
-            entry('tools.mime'),
-            entry('tools.jwt'),
-            entry('tools.hex'),
-          ],
-        ),
-      ];
+      MenuColumn(
+        title: 'File',
+        accent: _fileAccent,
+        entries: [
+          entry('file.new'),
+          entry('file.open'),
+          const MenuEntry.header('Current tab'),
+          entry('file.save'),
+          entry('file.saveas'),
+          entry('file.close'),
+          entry('tab.closeothers'),
+          entry('tab.closeright'),
+          entry('tab.copyname'),
+          entry('tab.copypath'),
+          entry('tab.autodelete'),
+        ],
+      ),
+      MenuColumn(
+        title: 'Edit',
+        accent: _editAccent,
+        entries: [
+          entry('edit.undo'),
+          entry('edit.redo'),
+          entry('edit.cut'),
+          entry('edit.copy'),
+          entry('edit.paste'),
+          entry('edit.case'),
+          entry('edit.eol'),
+          entry('edit.blank'),
+          entry('edit.comment'),
+        ],
+      ),
+      MenuColumn(
+        title: 'Search',
+        accent: _searchAccent,
+        entries: [
+          entry('search.find'),
+          entry('search.replace'),
+          entry('search.goto'),
+          entry('search.mark'),
+          entry('search.findall'),
+        ],
+      ),
+      MenuColumn(
+        title: 'View',
+        accent: _viewAccent,
+        entries: [
+          entry('view.linenumbers'),
+          entry('view.wordwrap'),
+          entry('view.foldall'),
+          entry('view.unfoldall'),
+        ],
+      ),
+      MenuColumn(
+        title: 'Tools',
+        accent: _toolsAccent,
+        entries: [
+          // One MIME entry, opening the tabbed MIME bar. The seven
+          // per-operation ids stay reachable from search.
+          entry('tools.mime'),
+          for (final id in _structuredEntryIds) entry(id),
+          entry('tools.jwt'),
+          entry('tools.hex'),
+        ],
+      ),
+    ];
   }
+
+  /// The structured Tools entries to offer for the detected format.
+  ///
+  /// JSON and JSON5 share one entry, because JSON5 is a switch on the JSON bar
+  /// rather than a tool of its own.
+  List<String> get _structuredEntryIds => switch (widget.markupLanguage) {
+    StructuredLanguage.json || StructuredLanguage.json5 => const ['tools.json'],
+    StructuredLanguage.yaml => const ['tools.yaml'],
+    StructuredLanguage.xml => const ['tools.xml'],
+    // Nothing detected, so narrowing would only hide things the user may
+    // legitimately want to run.
+    StructuredLanguage.plainText => const [
+      'tools.json',
+      'tools.yaml',
+      'tools.xml',
+    ],
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -537,7 +657,10 @@ class _MenuRibbonState extends State<MenuRibbon> {
                 ),
           filled: true,
           fillColor: scheme.surface,
-          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 0,
+            horizontal: 8,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(color: scheme.outlineVariant),
@@ -559,39 +682,45 @@ class _MenuRibbonState extends State<MenuRibbon> {
     return IntrinsicHeight(
       key: const ValueKey('menu-table'),
       child: Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (int i = 0; i < columns.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          MouseRegion(
-            onEnter: (_) => setState(() => _hoveredColumn = i),
-            onExit: (_) => setState(() => _hoveredColumn = null),
-            child: _MenuColumnCard(
-              column: columns[i],
-              // Resting when nothing hovered; full when this one is
-              // hovered; dimmed when a sibling is hovered.
-              emphasis: _hoveredColumn == null
-                  ? 0.72
-                  : (_hoveredColumn == i ? 1.0 : 0.32),
-              scheme: scheme,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < columns.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            MouseRegion(
+              onEnter: (_) => setState(() => _hoveredColumn = i),
+              onExit: (_) => setState(() => _hoveredColumn = null),
+              child: _MenuColumnCard(
+                column: columns[i],
+                // Resting when nothing hovered; full when this one is
+                // hovered; dimmed when a sibling is hovered.
+                emphasis: _hoveredColumn == null
+                    ? 0.72
+                    : (_hoveredColumn == i ? 1.0 : 0.32),
+                scheme: scheme,
+              ),
             ),
-          ),
+          ],
         ],
-      ],
       ),
     );
   }
 
   Color _getCategoryAccent(String category) {
     switch (category) {
-      case 'File': return _fileAccent;
-      case 'Edit': return _editAccent;
-      case 'Search': return _searchAccent;
-      case 'View': return _viewAccent;
+      case 'File':
+        return _fileAccent;
+      case 'Edit':
+        return _editAccent;
+      case 'Search':
+        return _searchAccent;
+      case 'View':
+        return _viewAccent;
       case 'Tools':
-      case 'MIME Tools': return _toolsAccent;
-      default: return _toolsAccent;
+      case 'MIME Tools':
+        return _toolsAccent;
+      default:
+        return _toolsAccent;
     }
   }
 
@@ -645,8 +774,11 @@ class _MenuRibbonState extends State<MenuRibbon> {
                       label: cmd.title,
                       icon: _parseIcon(cmd.icon),
                       shortcut: cmd.shortcut,
-                      toggled: cmd.id == 'view.linenumbers' ? widget.showLineNumbers :
-                               cmd.id == 'view.wordwrap' ? widget.wordWrap : cmd.toggled,
+                      toggled: cmd.id == 'view.linenumbers'
+                          ? widget.showLineNumbers
+                          : cmd.id == 'view.wordwrap'
+                          ? widget.wordWrap
+                          : cmd.toggled,
                       command: cmd,
                       // Same enablement gate as the menu table: without it the
                       // search box was a back door to tool bars that cannot
@@ -714,7 +846,10 @@ class _MenuColumnCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
                   child: Text(
                     column.title,
                     maxLines: 1,
@@ -731,10 +866,16 @@ class _MenuColumnCard extends StatelessWidget {
                 for (final entry in column.entries)
                   if (entry.isHeader)
                     _MenuSubHeader(
-                        label: entry.label, accent: column.accent, scheme: scheme)
+                      label: entry.label,
+                      accent: column.accent,
+                      scheme: scheme,
+                    )
                   else
                     _MenuEntryTile(
-                        entry: entry, accent: column.accent, scheme: scheme),
+                      entry: entry,
+                      accent: column.accent,
+                      scheme: scheme,
+                    ),
               ],
             ),
           ),
@@ -760,7 +901,9 @@ class _MenuEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = entry.onPressed != null;
-    final Color fg = enabled ? scheme.onSurface : scheme.onSurface.withOpacity(0.38);
+    final Color fg = enabled
+        ? scheme.onSurface
+        : scheme.onSurface.withOpacity(0.38);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
@@ -911,7 +1054,11 @@ class AutoDeletePanel extends StatelessWidget {
   final AutoDelete? current;
   final ValueChanged<AutoDelete>? onChanged;
 
-  const AutoDeletePanel({super.key, required this.current, required this.onChanged});
+  const AutoDeletePanel({
+    super.key,
+    required this.current,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -934,7 +1081,9 @@ class AutoDeletePanel extends StatelessWidget {
               RadioListTile<AutoDelete>(
                 value: option,
                 groupValue: current ?? AutoDelete.off,
-                onChanged: enabled ? (v) => onChanged!(v ?? AutoDelete.off) : null,
+                onChanged: enabled
+                    ? (v) => onChanged!(v ?? AutoDelete.off)
+                    : null,
                 title: Text(option.label, style: const TextStyle(fontSize: 13)),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -966,10 +1115,14 @@ class NewDocumentForm extends StatefulWidget {
 
 class _NewDocumentFormState extends State<NewDocumentForm> {
   late final TextEditingController _nameController;
-  final TextEditingController _typeController =
-      TextEditingController(text: 'Plain Text');
+  final FocusNode _nameFocus = FocusNode();
+  final TextEditingController _typeController = TextEditingController(
+    text: 'Plain Text',
+  );
   final FocusNode _typeFocus = FocusNode();
-  final TextEditingController _extController = TextEditingController(text: 'txt');
+  final TextEditingController _extController = TextEditingController(
+    text: 'txt',
+  );
   AutoDelete _autoDelete = AutoDelete.off;
 
   /// Common content types offered as autocomplete suggestions.
@@ -1002,6 +1155,13 @@ class _NewDocumentFormState extends State<NewDocumentForm> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.defaultName);
+    _selectAllName();
+    // `autofocus` is not enough here: the ribbon's search field still holds
+    // focus while the AnimatedSwitcher cross-fades this panel in, and autofocus
+    // is skipped when the enclosing scope already has a focused node.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
   }
 
   @override
@@ -1009,12 +1169,23 @@ class _NewDocumentFormState extends State<NewDocumentForm> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.defaultName != widget.defaultName) {
       _nameController.text = widget.defaultName;
+      _selectAllName();
     }
+  }
+
+  /// The suggested name is a placeholder, so select it: the panel opens with
+  /// the caret here and the first keystroke should replace it, not append.
+  void _selectAllName() {
+    _nameController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _nameController.text.length,
+    );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _nameFocus.dispose();
     _typeController.dispose();
     _typeFocus.dispose();
     _extController.dispose();
@@ -1024,26 +1195,28 @@ class _NewDocumentFormState extends State<NewDocumentForm> {
   void _submit() {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    widget.onCreate(NewDocumentRequest(
-      name: name,
-      contentType: _typeController.text.trim().isEmpty
-          ? 'Plain Text'
-          : _typeController.text.trim(),
-      extension: _extController.text.trim().isEmpty
-          ? 'txt'
-          : _extController.text.trim(),
-      autoDelete: _autoDelete,
-    ));
+    widget.onCreate(
+      NewDocumentRequest(
+        name: name,
+        contentType: _typeController.text.trim().isEmpty
+            ? 'Plain Text'
+            : _typeController.text.trim(),
+        extension: _extController.text.trim().isEmpty
+            ? 'txt'
+            : _extController.text.trim(),
+        autoDelete: _autoDelete,
+      ),
+    );
   }
 
   InputDecoration _dec(ColorScheme scheme, String label) => InputDecoration(
-        labelText: label,
-        isDense: true,
-        filled: true,
-        fillColor: scheme.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      );
+    labelText: label,
+    isDense: true,
+    filled: true,
+    fillColor: scheme.surface,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+  );
 
   /// Content-type field with autocomplete over [_contentTypes]. Uses
   /// RawAutocomplete so [_typeController] stays the single source of truth.
@@ -1082,7 +1255,10 @@ class _NewDocumentFormState extends State<NewDocumentForm> {
                   return InkWell(
                     onTap: () => onSelected(option),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       child: Text(option, style: const TextStyle(fontSize: 13)),
                     ),
                   );
@@ -1101,65 +1277,86 @@ class _NewDocumentFormState extends State<NewDocumentForm> {
     return Align(
       alignment: Alignment.topLeft,
       child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: _nameController,
-          decoration: _dec(scheme, 'Document name'),
-          onSubmitted: (_) => _submit(),
-        ),
-        const SizedBox(height: 12),
-        Row(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 3,
-              child: _buildContentTypeField(scheme),
+            TextField(
+              controller: _nameController,
+              focusNode: _nameFocus,
+              autofocus: true,
+              decoration: _dec(scheme, 'Document name'),
+              onSubmitted: (_) => _submit(),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 1,
-              child: TextField(
-                controller: _extController,
-                decoration: _dec(scheme, 'Ext'),
-              ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: _buildContentTypeField(scheme)),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: TextField(
+                    controller: _extController,
+                    decoration: _dec(scheme, 'Ext'),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Text('Auto-delete',
-            style: TextStyle(
+            const SizedBox(height: 12),
+            Text(
+              'Auto-delete',
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant)),
-        for (final option in AutoDelete.values)
-          RadioListTile<AutoDelete>(
-            value: option,
-            groupValue: _autoDelete,
-            onChanged: (v) => setState(() => _autoDelete = v ?? AutoDelete.off),
-            title: Text(option.label, style: const TextStyle(fontSize: 13)),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton(onPressed: widget.onCancel, child: const Text('Cancel')),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: _submit,
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Create'),
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            // The ribbon paints its own background between here and the
+            // enclosing Material, which would swallow the tiles' ink splashes;
+            // a transparent Material of their own puts the ink back on top.
+            Material(
+              type: MaterialType.transparency,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final option in AutoDelete.values)
+                    RadioListTile<AutoDelete>(
+                      value: option,
+                      groupValue: _autoDelete,
+                      onChanged: (v) =>
+                          setState(() => _autoDelete = v ?? AutoDelete.off),
+                      title: Text(
+                        option.label,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: widget.onCancel,
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _submit,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Create'),
+                ),
+              ],
             ),
           ],
         ),
-      ],
-      ),
       ),
     );
   }

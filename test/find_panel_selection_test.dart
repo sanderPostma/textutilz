@@ -27,7 +27,9 @@ void main() {
     await RustLib.init();
   });
 
-  testWidgets('selecting text then opening find enables "In selection"', (tester) async {
+  testWidgets('selecting text then opening find enables "In selection"', (
+    tester,
+  ) async {
     // The panel's Row is wide enough to overflow the default 800x600 test
     // surface (it isn't wrapped in a scroll/flex-shrink container); give the
     // harness a wider viewport so that's not what this test is about.
@@ -38,7 +40,10 @@ void main() {
 
     final path =
         '${Directory.systemTemp.path}/textutilz_find_panel_${DateTime.now().microsecondsSinceEpoch}.txt';
-    final session = EditSession.createScratch(path: path, content: 'hello world\n');
+    final session = EditSession.createScratch(
+      path: path,
+      content: 'hello world\n',
+    );
     addTearDown(() {
       try {
         File(path).deleteSync();
@@ -61,9 +66,12 @@ void main() {
                     FindPanel(
                       controller: controller,
                       onClose: () => setState(() => findVisible = false),
-                      onReveal: (span) => editorKey.currentState?.revealSpan(span),
+                      onReveal: (span) =>
+                          editorKey.currentState?.revealSpan(span),
                     ),
-                  Expanded(child: CustomEditor(key: editorKey, session: session)),
+                  Expanded(
+                    child: CustomEditor(key: editorKey, session: session),
+                  ),
                   ElevatedButton(
                     // Stand-in for the app's Ctrl+F handler: after the
                     // Finding-2 fix, _openFind reads the editor's current
@@ -93,15 +101,21 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.pump();
 
-    expect(editorKey.currentState!.selectionScope, isNotNull,
-        reason: 'setup: expected a live selection before opening find');
+    expect(
+      editorKey.currentState!.selectionScope,
+      isNotNull,
+      reason: 'setup: expected a live selection before opening find',
+    );
     expect(controller.scope, isNull, reason: 'setup: panel not opened yet');
 
     await tester.tap(find.text('open find'));
     await tester.pump();
 
-    expect(controller.scope, isNotNull,
-        reason: 'opening find should have carried the selection into scope');
+    expect(
+      controller.scope,
+      isNotNull,
+      reason: 'opening find should have carried the selection into scope',
+    );
 
     final inSelectionInkWell = find.descendant(
       of: find.byTooltip('In selection'),
@@ -109,7 +123,10 @@ void main() {
     );
     expect(inSelectionInkWell, findsOneWidget);
     final inkWell = tester.widget<InkWell>(inSelectionInkWell);
-    expect(inkWell.onTap, isNotNull,
-        reason: '"In selection" should be enabled when scope is non-null');
+    expect(
+      inkWell.onTap,
+      isNotNull,
+      reason: '"In selection" should be enabled when scope is non-null',
+    );
   });
 }

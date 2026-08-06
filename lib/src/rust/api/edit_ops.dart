@@ -4,9 +4,12 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../markup/language.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'structured.dart';
 
-// These functions are ignored because they are not marked as `pub`: `get_comment_symbols`
+// These functions are ignored because they are not marked as `pub`: `apply`, `comment_rows`, `is_applied`, `map_rows`, `no_block_syntax`, `no_comment_syntax`, `of`, `remove`, `split_indent`, `uncomment_rows`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LineMarker`
 
 Future<String> properCase({required String input, required bool blend}) =>
     RustLib.instance.api.crateApiEditOpsProperCase(input: input, blend: blend);
@@ -60,54 +63,57 @@ Future<String> spaceToTab({
   leadingOnly: leadingOnly,
 );
 
+/// Comment the rows, or uncomment them if every non-blank row already is.
 Future<String> toggleSingleLineComment({
   required String input,
-  required String extension_,
+  required CommentStyle style,
 }) => RustLib.instance.api.crateApiEditOpsToggleSingleLineComment(
   input: input,
-  extension_: extension_,
-);
-
-Future<String> blockComment({
-  required String input,
-  required String extension_,
-}) => RustLib.instance.api.crateApiEditOpsBlockComment(
-  input: input,
-  extension_: extension_,
-);
-
-Future<String> blockUncomment({
-  required String input,
-  required String extension_,
-}) => RustLib.instance.api.crateApiEditOpsBlockUncomment(
-  input: input,
-  extension_: extension_,
+  style: style,
 );
 
 Future<String> singleLineComment({
   required String input,
-  required String extension_,
+  required CommentStyle style,
 }) => RustLib.instance.api.crateApiEditOpsSingleLineComment(
   input: input,
-  extension_: extension_,
+  style: style,
 );
 
 Future<String> singleLineUncomment({
   required String input,
-  required String extension_,
+  required CommentStyle style,
 }) => RustLib.instance.api.crateApiEditOpsSingleLineUncomment(
   input: input,
-  extension_: extension_,
+  style: style,
+);
+
+Future<String> blockComment({
+  required String input,
+  required CommentStyle style,
+}) => RustLib.instance.api.crateApiEditOpsBlockComment(
+  input: input,
+  style: style,
+);
+
+Future<String> blockUncomment({
+  required String input,
+  required CommentStyle style,
+}) => RustLib.instance.api.crateApiEditOpsBlockUncomment(
+  input: input,
+  style: style,
 );
 
 String applyEditOp({
   required String input,
   required String opId,
   required String extension_,
+  required StructuredLanguage language,
   required BigInt tabWidth,
 }) => RustLib.instance.api.crateApiEditOpsApplyEditOp(
   input: input,
   opId: opId,
   extension_: extension_,
+  language: language,
   tabWidth: tabWidth,
 );

@@ -36,6 +36,18 @@ abstract class HexSession implements RustOpaqueInterface {
   /// Finalize the current group.
   void endGroup();
 
+  /// Find non-overlapping occurrences of `pattern` at or after
+  /// `from_offset`. The piece table is read in bounded windows, so searching
+  /// a multi-GB base file never loads the whole document into memory.
+  ///
+  /// `max_results == 0` means unlimited. Otherwise scanning stops after one
+  /// additional match proves the returned list was truncated.
+  Future<ByteSearchResult> findBytes({
+    required List<int> pattern,
+    required BigInt fromOffset,
+    required BigInt maxResults,
+  });
+
   /// Insert `bytes` at `offset`, shifting following bytes. Returns the caret
   /// offset just past the inserted bytes.
   BigInt insertBytes({required BigInt offset, required List<int> bytes});
@@ -68,6 +80,21 @@ abstract class HexSession implements RustOpaqueInterface {
 
   BigInt? redo();
 
+  /// Replace every non-overlapping occurrence as one undo step. Edits are
+  /// applied from the end backwards so earlier byte offsets remain valid.
+  Future<BigInt> replaceAllBytes({
+    required List<int> pattern,
+    required List<int> replacement,
+  });
+
+  /// Replace one exact byte sequence. The expected bytes guard against a
+  /// stale search result after the document has been edited.
+  BigInt replaceBytes({
+    required BigInt offset,
+    required List<int> expected,
+    required List<int> replacement,
+  });
+
   void save();
 
   void saveAs({required String newPath});
@@ -97,4 +124,25 @@ class ByteRange {
           runtimeType == other.runtimeType &&
           start == other.start &&
           len == other.len;
+}
+
+/// Matches returned by [`HexSession::find_bytes`]. `complete` is false when
+/// the caller's result limit was reached, allowing the UI to stay bounded on
+/// files containing millions of identical bytes.
+class ByteSearchResult {
+  final Uint64List offsets;
+  final bool complete;
+
+  const ByteSearchResult({required this.offsets, required this.complete});
+
+  @override
+  int get hashCode => offsets.hashCode ^ complete.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ByteSearchResult &&
+          runtimeType == other.runtimeType &&
+          offsets == other.offsets &&
+          complete == other.complete;
 }

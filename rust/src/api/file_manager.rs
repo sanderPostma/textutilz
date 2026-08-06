@@ -1,22 +1,59 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::Mutex;
+use std::time::SystemTime;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FileVersion {
+    len: u64,
+    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl FileVersion {
+    fn from_metadata(metadata: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            #[cfg(unix)]
+            device: metadata.dev(),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+        }
+    }
+
+    fn read(path: &str) -> anyhow::Result<Self> {
+        let metadata = std::fs::metadata(path)?;
+        Ok(Self::from_metadata(&metadata))
+    }
+}
 
 #[flutter_rust_bridge::frb(opaque)]
 pub struct FileBuffer {
     pub size: usize,
     pub path: String,
     pub line_offsets: Vec<usize>,
+    /// The exact file version whose bytes [line_offsets] index. Holding the
+    /// handle keeps an atomically replaced file coherent until explicit reload.
+    file: Mutex<File>,
+    version: FileVersion,
 }
 
 impl FileBuffer {
-    fn scan_file(path: &str) -> anyhow::Result<(usize, Vec<usize>)> {
+    fn scan_file(path: &str) -> anyhow::Result<(File, usize, Vec<usize>, FileVersion)> {
         let mut file = File::open(path)?;
         let mut line_offsets = Vec::with_capacity(1024);
         line_offsets.push(0);
-        
+
         let mut buffer = [0; 65536];
         let mut current_offset = 0;
-        
+
         loop {
             let n = file.read(&mut buffer)?;
             if n == 0 {
@@ -29,14 +66,22 @@ impl FileBuffer {
             }
             current_offset += n;
         }
-        Ok((current_offset, line_offsets))
+        // Capture the identity of the exact handle we scanned. If the path was
+        // atomically replaced during the scan, this remains the old inode and
+        // the next path check correctly reports an external change instead of
+        // blessing new-path metadata alongside old offsets.
+        let version = FileVersion::from_metadata(&file.metadata()?);
+        Ok((file, current_offset, line_offsets, version))
     }
 
     pub(crate) fn read_bytes(&self, start: usize, end: usize) -> anyhow::Result<Vec<u8>> {
         if start >= end {
             return Ok(Vec::new());
         }
-        let mut file = File::open(&self.path)?;
+        let mut file = self
+            .file
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file buffer lock poisoned"))?;
         file.seek(SeekFrom::Start(start as u64))?;
         let mut buf = vec![0; end - start];
         file.read_exact(&mut buf)?;
@@ -55,12 +100,24 @@ pub struct LineChunk {
 impl FileBuffer {
     #[flutter_rust_bridge::frb(sync)]
     pub fn open(path: String) -> anyhow::Result<FileBuffer> {
-        let (size, line_offsets) = FileBuffer::scan_file(&path)?;
+        let (file, size, line_offsets, version) = FileBuffer::scan_file(&path)?;
         Ok(FileBuffer {
             size,
             path,
             line_offsets,
+            file: Mutex::new(file),
+            version,
         })
+    }
+
+    /// Whether the path now points at different file contents than the
+    /// version whose line offsets this buffer scanned. A missing/inaccessible
+    /// file also counts as changed so the UI can surface the problem instead
+    /// of continuing to render with stale offsets.
+    pub(crate) fn has_external_changes(&self) -> bool {
+        FileVersion::read(&self.path)
+            .map(|current| current != self.version)
+            .unwrap_or(true)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -71,21 +128,27 @@ impl FileBuffer {
     #[flutter_rust_bridge::frb(sync)]
     pub fn read_line_chunk(&self, start_line: usize, count: usize) -> anyhow::Result<LineChunk> {
         if start_line >= self.line_offsets.len() {
-            return Ok(LineChunk { content: String::new(), start_line, end_line: start_line, byte_start: self.size, byte_end: self.size });
+            return Ok(LineChunk {
+                content: String::new(),
+                start_line,
+                end_line: start_line,
+                byte_start: self.size,
+                byte_end: self.size,
+            });
         }
-        
+
         let end_line = std::cmp::min(start_line + count, self.line_offsets.len());
-        
+
         let byte_start = self.line_offsets[start_line];
         let byte_end = if end_line < self.line_offsets.len() {
             self.line_offsets[end_line]
         } else {
             self.size
         };
-        
+
         let bytes = self.read_bytes(byte_start, byte_end)?;
         let content = String::from_utf8_lossy(&bytes).into_owned();
-        
+
         Ok(LineChunk {
             content,
             start_line,
@@ -100,31 +163,33 @@ impl FileBuffer {
         if index >= self.line_offsets.len() {
             return Ok(String::new());
         }
-        
+
         let byte_start = self.line_offsets[index];
         let byte_end = if index + 1 < self.line_offsets.len() {
             self.line_offsets[index + 1]
         } else {
             self.size
         };
-        
+
         let mut bytes = self.read_bytes(byte_start, byte_end)?;
-        
+
         if bytes.last() == Some(&b'\n') {
             bytes.pop();
         }
         if bytes.last() == Some(&b'\r') {
             bytes.pop();
         }
-        
+
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn refresh(&mut self) -> anyhow::Result<()> {
-        let (size, line_offsets) = FileBuffer::scan_file(&self.path)?;
+        let (file, size, line_offsets, version) = FileBuffer::scan_file(&self.path)?;
         self.size = size;
         self.line_offsets = line_offsets;
+        self.file = Mutex::new(file);
+        self.version = version;
         Ok(())
     }
 }
@@ -146,7 +211,11 @@ impl FileBuffer {
         self.save_edits_impl(Some(new_path), edits)
     }
 
-    fn save_edits_impl(&mut self, new_path: Option<String>, edits: Vec<LineEdit>) -> anyhow::Result<()> {
+    fn save_edits_impl(
+        &mut self,
+        new_path: Option<String>,
+        edits: Vec<LineEdit>,
+    ) -> anyhow::Result<()> {
         use std::io::Write;
         let mut edits_map = std::collections::HashMap::new();
         for edit in edits {
@@ -171,7 +240,7 @@ impl FileBuffer {
                     } else {
                         self.size
                     };
-                    
+
                     if byte_end > byte_start {
                         let bytes = self.read_bytes(byte_start, byte_end)?;
                         if !bytes.is_empty() {

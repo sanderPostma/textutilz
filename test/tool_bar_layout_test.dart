@@ -5,20 +5,23 @@ import 'package:textutilz/tool_bar.dart';
 
 void main() {
   Widget host(String panelId) => MaterialApp(
-        home: Scaffold(
-          body: Column(children: [
-            ToolBar(
-              panelId: panelId,
-              editToolsEnabled: true,
-              mimeToolsEnabled: true,
-              mimeHasSelection: true,
-              onRunEditOp: (_) {},
-              onRunMimeOp: (_) {},
-              onClose: () {},
-            ),
-          ]),
-        ),
-      );
+    home: Scaffold(
+      body: Column(
+        children: [
+          ToolBar(
+            panelId: panelId,
+            editToolsEnabled: true,
+            mimeToolsEnabled: true,
+            mimeHasSelection: true,
+            onRunEditOp: (_) {},
+            onRunMimeOp: (_) {},
+            onRunStructuredOp: (_) {},
+            onClose: () {},
+          ),
+        ],
+      ),
+    ),
+  );
 
   /// Pump the bar across a range of widths, asserting no overflow at any of
   /// them. Two hand-picked widths have twice failed to catch real overflow in
@@ -33,9 +36,12 @@ void main() {
     }
   }
 
-  testWidgets('handles() claims the mime/edit panels only', (tester) async {
+  testWidgets('handles() claims edit, MIME, and structured panels', (
+    tester,
+  ) async {
     expect(ToolBar.handles('edit.comment'), isTrue);
     expect(ToolBar.handles('mime.base64.encode'), isTrue);
+    expect(ToolBar.handles('structured.yaml'), isTrue);
     expect(ToolBar.handles('new'), isFalse);
     expect(ToolBar.handles('autodelete'), isFalse);
   });
@@ -50,17 +56,26 @@ void main() {
     expect(find.text('Base64 Encode'), findsOneWidget);
   });
 
-  testWidgets('widest edit bar does not overflow across a width sweep',
-      (tester) async {
+  testWidgets('widest edit bar does not overflow across a width sweep', (
+    tester,
+  ) async {
     addTearDown(tester.view.reset);
     // Blank Operations has 8 long labels — the worst case.
     await sweep(tester, 'edit.blank');
   });
 
-  testWidgets('mime bar does not overflow across a width sweep',
-      (tester) async {
+  testWidgets('mime bar does not overflow across a width sweep', (
+    tester,
+  ) async {
     addTearDown(tester.view.reset);
     await sweep(tester, 'mime.base64.encode');
+  });
+
+  testWidgets('structured bar does not overflow across a width sweep', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    await sweep(tester, 'structured.json');
   });
 
   testWidgets('close button stays reachable at 400px', (tester) async {
@@ -112,71 +127,95 @@ void main() {
     'mime.saml.decode': 88,
     // The tabbed bar: a tab row plus the selected category's option run.
     'mime': 119,
+    // Five operation buttons, the scope note, a divider, and the auto-validate
+    // switch do not fit on one run at 800px. JSON is the tallest because it
+    // also carries the JSON5 dialect switch. These were 86px when the bar held
+    // only Pretty-print and Compact.
+    'structured.json': 127,
+    'structured.yaml': 115,
+    'structured.xml': 115,
   };
 
   Widget heightHost(String panelId) => MaterialApp(
-        home: Scaffold(
-          body: Column(children: [
-            ToolBar(
-              panelId: panelId,
-              editToolsEnabled: true,
-              mimeToolsEnabled: true,
-              mimeHasSelection: false,
-              onRunEditOp: (_) {},
-              onRunMimeOp: (_) {},
-              onClose: () {},
-            ),
-          ]),
-        ),
-      );
+    home: Scaffold(
+      body: Column(
+        children: [
+          ToolBar(
+            panelId: panelId,
+            editToolsEnabled: true,
+            mimeToolsEnabled: true,
+            mimeHasSelection: false,
+            onRunEditOp: (_) {},
+            onRunMimeOp: (_) {},
+            onRunStructuredOp: (_) {},
+            onClose: () {},
+          ),
+        ],
+      ),
+    ),
+  );
 
   for (final entry in heightCeilingsAt800.entries) {
-    testWidgets('${entry.key} bar stays within ${entry.value}px at 800px',
-        (tester) async {
+    testWidgets('${entry.key} bar stays within ${entry.value}px at 800px', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(800, 600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(heightHost(entry.key));
       await tester.pump();
       final height = tester.getSize(find.byType(DockedBar)).height;
-      expect(height, lessThanOrEqualTo(entry.value),
-          reason: '${entry.key} grew to ${height}px at 800px; the docked bar '
-              'exists to be slimmer than the ~190px ribbon panel it replaced');
+      expect(
+        height,
+        lessThanOrEqualTo(entry.value),
+        reason:
+            '${entry.key} grew to ${height}px at 800px; the docked bar '
+            'exists to be slimmer than the ~190px ribbon panel it replaced',
+      );
     });
   }
 
   Widget mimeHost({required bool enabled, required bool hasSelection}) =>
       MaterialApp(
         home: Scaffold(
-          body: Column(children: [
-            ToolBar(
-              panelId: 'mime.base64.encode',
-              editToolsEnabled: true,
-              mimeToolsEnabled: enabled,
-              mimeHasSelection: hasSelection,
-              onRunEditOp: (_) {},
-              onRunMimeOp: (_) {},
-              onClose: () {},
-            ),
-          ]),
+          body: Column(
+            children: [
+              ToolBar(
+                panelId: 'mime.base64.encode',
+                editToolsEnabled: true,
+                mimeToolsEnabled: enabled,
+                mimeHasSelection: hasSelection,
+                onRunEditOp: (_) {},
+                onRunMimeOp: (_) {},
+                onRunStructuredOp: (_) {},
+                onClose: () {},
+              ),
+            ],
+          ),
         ),
       );
 
-  testWidgets('mime bar explains it transforms the selection when enabled with a selection',
-      (tester) async {
-    await tester.pumpWidget(mimeHost(enabled: true, hasSelection: true));
-    expect(find.text('Transforms the selection.'), findsOneWidget);
-  });
+  testWidgets(
+    'mime bar explains it transforms the selection when enabled with a selection',
+    (tester) async {
+      await tester.pumpWidget(mimeHost(enabled: true, hasSelection: true));
+      expect(find.text('Transforms the selection.'), findsOneWidget);
+    },
+  );
 
-  testWidgets('mime bar explains it transforms the document when enabled with no selection',
-      (tester) async {
-    await tester.pumpWidget(mimeHost(enabled: true, hasSelection: false));
-    expect(find.text('⚠️ Transforms the whole document.'), findsOneWidget);
-  });
+  testWidgets(
+    'mime bar explains it transforms the document when enabled with no selection',
+    (tester) async {
+      await tester.pumpWidget(mimeHost(enabled: true, hasSelection: false));
+      expect(find.text('⚠️ Transforms the whole document.'), findsOneWidget);
+    },
+  );
 
   testWidgets('mime bar explains why it is disabled', (tester) async {
     await tester.pumpWidget(mimeHost(enabled: false, hasSelection: false));
-    expect(find.text('Open a document in Edit mode to run MIME tools.'),
-        findsOneWidget);
+    expect(
+      find.text('Open a document in Edit mode to run MIME tools.'),
+      findsOneWidget,
+    );
   });
 }

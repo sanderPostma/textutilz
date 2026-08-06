@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import 'find_results_panel.dart';
 import 'src/rust/api/edit_session.dart';
 import 'src/rust/api/search.dart';
 
 /// Which face the panel is showing. The query controller is shared between
 /// them, so switching carries the typed text over.
-enum FindPanelMode { find, replace }
+enum FindPanelMode { find, replace, mark }
 
 /// Matches loaded per paged scan. Mirrors SEARCH_WINDOW_ROWS in search.rs.
 const int kSearchWindowRows = 4096;
@@ -17,6 +18,12 @@ const int kPrefetchMargin = 20;
 
 /// Coalesce keystrokes before scanning.
 const Duration kMatchDebounce = Duration(milliseconds: 150);
+
+class MarkedSpan {
+  final MatchSpan span;
+  final Color color;
+  const MarkedSpan(this.span, this.color);
+}
 
 /// Owns the find/replace view state: the query, the options, which windows
 /// have been scanned, and which match is current. All matching itself happens
@@ -34,6 +41,10 @@ class FindController extends ChangeNotifier {
   bool wrapAround = true;
   bool inSelection = false;
   bool dotMatchesNewline = false;
+  bool bookmarkLine = false;
+
+  List<MarkedSpan> markedSpans = [];
+  Set<int> markedLines = {};
 
   /// Re-case each replacement to follow the case of the text it replaces
   /// (ALL CAPS -> ALL CAPS, Capitalised -> Capitalised, lower -> lower).
@@ -56,8 +67,8 @@ class FindController extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   MatchSpan? get currentMatch =>
       (_currentIndex >= 0 && _currentIndex < _loaded.length)
-          ? _loaded[_currentIndex]
-          : null;
+      ? _loaded[_currentIndex]
+      : null;
 
   /// Rows already scanned: [0, _loadedTo). Scanning always starts at row 0
   /// (see `refresh`), so there is no separate lower bound to track.
@@ -86,6 +97,7 @@ class FindController extends ChangeNotifier {
     _lineCount = lineCount;
     _generation++;
     _resetMatches();
+    _resetSearchResults();
     _notify();
   }
 
@@ -103,6 +115,13 @@ class FindController extends ChangeNotifier {
 
   /// Re-run the search after a debounce. Call on every keystroke.
   void scheduleRefresh() {
+    // Find All rows are a snapshot of this exact query/options combination.
+    // Keeping them visible after the query changes would let a click select a
+    // span that no longer belongs to the find bar's current match set.
+    if (isSearchResultsVisible) {
+      _resetSearchResults();
+      _notify();
+    }
     _debounce?.cancel();
     _debounce = Timer(kMatchDebounce, refresh);
   }
@@ -119,12 +138,12 @@ class FindController extends ChangeNotifier {
   }
 
   SearchQuery _buildQuery() => SearchQuery(
-        pattern: query.text,
-        mode: searchMode,
-        matchCase: matchCase,
-        wholeWord: wholeWord,
-        dotMatchesNewline: dotMatchesNewline,
-      );
+    pattern: query.text,
+    mode: searchMode,
+    matchCase: matchCase,
+    wholeWord: wholeWord,
+    dotMatchesNewline: dotMatchesNewline,
+  );
 
   /// The query as it would be sent to Rust right now. Exposed so the host
   /// can run its own independent scans (e.g. viewport-scoped highlighting)
@@ -238,7 +257,9 @@ class FindController extends ChangeNotifier {
 
   bool get canStepForward =>
       _loaded.isNotEmpty &&
-      (wrapAround || _currentIndex < _loaded.length - 1 || _loadedTo < _lineCount);
+      (wrapAround ||
+          _currentIndex < _loaded.length - 1 ||
+          _loadedTo < _lineCount);
 
   bool get canStepBackward =>
       _loaded.isNotEmpty && (wrapAround || _currentIndex > 0);
@@ -253,20 +274,28 @@ class FindController extends ChangeNotifier {
       _maybePrefetch();
       return;
     }
-    if (_loadedTo < _lineCount) {
-      await _loadForward(gen);
+    // Page forward until a further match turns up or the document runs out.
+    // One window is not enough: `_loadForward` stops as soon as `_loaded` is
+    // non-empty, which it already is here, so a window with no matches in it
+    // would drop through to the wrap below while matches still lay ahead.
+    while (_loadedTo < _lineCount && _currentIndex >= _loaded.length - 1) {
+      await _loadNextWindow(gen);
       if (gen != _generation) return;
-      if (_currentIndex < _loaded.length - 1) {
-        _currentIndex++;
-        _revealTick++;
-        _notify();
-        // Same as the fast path above: having just moved, keep the window
-        // after this one warm so the *next* press doesn't wait either.
-        _maybePrefetch();
-        return;
-      }
     }
-    if (wrapAround) {
+    if (_currentIndex < _loaded.length - 1) {
+      _currentIndex++;
+      _revealTick++;
+      _notify();
+      // Same as the fast path above: having just moved, keep the window
+      // after this one warm so the *next* press doesn't wait either.
+      _maybePrefetch();
+      return;
+    }
+    // Only wrap once the document really is exhausted. With several
+    // `stepForward()` calls in flight, a step whose window load joined
+    // another's can arrive here with matches still unscanned ahead of it, and
+    // wrapping then would jump the user back to the first match mid-document.
+    if (wrapAround && _loadedTo >= _lineCount) {
       _currentIndex = 0;
       _revealTick++;
       _notify();
@@ -349,9 +378,11 @@ class FindController extends ChangeNotifier {
     final gen = _generation;
     if (_loaded.length - _currentIndex <= kPrefetchMargin &&
         _loadedTo < _lineCount) {
-      unawaited(_loadNextWindow(gen).then((_) {
-        if (gen == _generation) _notify();
-      }));
+      unawaited(
+        _loadNextWindow(gen).then((_) {
+          if (gen == _generation) _notify();
+        }),
+      );
     }
   }
 
@@ -446,6 +477,226 @@ class FindController extends ChangeNotifier {
     return n.toInt();
   }
 
+  static const List<Color> markColors = [
+    Color(0x8000E5FF), // Cyan
+    Color(0x80FF9100), // Orange
+    Color(0x80C6FF00), // Lime
+    Color(0x80E040FB), // Purple
+    Color(0x8000E676), // Green
+    Color(0x80FF1744), // Red
+  ];
+
+  int _markColorIndex = 0;
+
+  /// Mark all matches across the document (or within scope if active).
+  /// Appends newly marked spans with the next cycling color, preserving past marks.
+  Future<int> markAll() async {
+    final s = _session;
+    if (s == null || query.text.isEmpty) {
+      _notify();
+      return 0;
+    }
+    final found = await s.findInRows(
+      query: _buildQuery(),
+      fromRow: BigInt.zero,
+      toRow: BigInt.from(_lineCount),
+      scope: activeScope,
+    );
+    final color = markColors[_markColorIndex % markColors.length];
+    _markColorIndex++;
+    for (final span in found) {
+      markedSpans.add(MarkedSpan(span, color));
+      if (bookmarkLine) {
+        markedLines.add(span.startRow.toInt());
+      }
+    }
+    _notify();
+    return found.length;
+  }
+
+  /// Clear all active marks and bookmarked lines.
+  void clearMarks() {
+    markedSpans.clear();
+    markedLines.clear();
+    _markColorIndex = 0;
+    _notify();
+  }
+
+  List<FindResultItem> _searchResults = const [];
+  List<FindResultItem> get searchResults => List.unmodifiable(_searchResults);
+  bool isSearchResultsVisible = false;
+  bool isSearchResultsLoading = false;
+  String searchResultsQuery = '';
+  String? searchResultsError;
+
+  int _findAllGeneration = 0;
+
+  void _resetSearchResults() {
+    _findAllGeneration++;
+    _searchResults = const [];
+    isSearchResultsVisible = false;
+    isSearchResultsLoading = false;
+    searchResultsQuery = '';
+    searchResultsError = null;
+  }
+
+  /// Find all matches across the document and populate the bottom dock.
+  ///
+  /// The scan is paged so a large document is never copied across the bridge
+  /// in one enormous request. Results from a superseded query, edit, or tab
+  /// switch are discarded using [_findAllGeneration].
+  Future<int> findAll() async {
+    final s = _session;
+    if (s == null || query.text.isEmpty) {
+      _resetSearchResults();
+      _notify();
+      return 0;
+    }
+
+    final searchQuery = _buildQuery();
+    final error = validateQuery(query: searchQuery);
+    if (error != null) {
+      _findAllGeneration++;
+      _searchResults = const [];
+      isSearchResultsVisible = true;
+      isSearchResultsLoading = false;
+      searchResultsQuery = query.text;
+      searchResultsError = error;
+      _notify();
+      return 0;
+    }
+
+    final generation = ++_findAllGeneration;
+    final resultQuery = query.text;
+    final resultScope = activeScope;
+    final lineCount = _lineCount;
+    final found = <MatchSpan>[];
+
+    _searchResults = const [];
+    isSearchResultsVisible = true;
+    isSearchResultsLoading = true;
+    searchResultsQuery = resultQuery;
+    searchResultsError = null;
+    _notify();
+
+    try {
+      for (int from = 0; from < lineCount; from += kSearchWindowRows) {
+        final to = (from + kSearchWindowRows).clamp(0, lineCount);
+        final page = await s.findInRows(
+          query: searchQuery,
+          fromRow: BigInt.from(from),
+          toRow: BigInt.from(to),
+          scope: resultScope,
+        );
+        if (generation != _findAllGeneration || !identical(s, _session)) {
+          return 0;
+        }
+        found.addAll(page);
+      }
+
+      _searchResults = found
+          .map((span) {
+            String lineText;
+            try {
+              lineText = s.line(vrow: span.startRow);
+            } catch (_) {
+              lineText = '';
+            }
+            return FindResultItem(span, lineText);
+          })
+          .toList(growable: false);
+    } catch (error) {
+      if (generation != _findAllGeneration || !identical(s, _session)) {
+        return 0;
+      }
+      _searchResults = const [];
+      searchResultsError = error.toString();
+    }
+
+    if (generation != _findAllGeneration || !identical(s, _session)) return 0;
+    isSearchResultsLoading = false;
+    _notify();
+    return _searchResults.length;
+  }
+
+  /// Hide the bottom search results pane.
+  void closeSearchResults() {
+    _findAllGeneration++;
+    isSearchResultsVisible = false;
+    isSearchResultsLoading = false;
+    _notify();
+  }
+
+  /// Make a Find All row the same current match used by the find bar and the
+  /// editor's accented match layer.
+  void selectSearchResult(MatchSpan span) {
+    final index = _searchResults.indexWhere(
+      (item) =>
+          item.span.startRow == span.startRow &&
+          item.span.startCol == span.startCol &&
+          item.span.endRow == span.endRow &&
+          item.span.endCol == span.endCol,
+    );
+    if (index < 0) return;
+
+    // Invalidate paging/count work for the previous partial match list, then
+    // promote the already-complete Find All snapshot into the stepping list.
+    _generation++;
+    _loaded
+      ..clear()
+      ..addAll(_searchResults.map((item) => item.span));
+    _loadedTo = _lineCount;
+    _exactTotal = _loaded.length;
+    _sweepRunning = false;
+    _currentIndex = index;
+    _revealTick++;
+    _notify();
+  }
+
+  /// Extracts the marked text (or bookmarked lines if bookmarkLine is set) as a single string.
+  String copyMarkedText() {
+    final s = _session;
+    if (s == null || markedSpans.isEmpty) return '';
+    final StringBuffer sb = StringBuffer();
+    if (bookmarkLine && markedLines.isNotEmpty) {
+      final sortedLines = markedLines.toList()..sort();
+      for (final lineIdx in sortedLines) {
+        try {
+          sb.writeln(s.line(vrow: BigInt.from(lineIdx)));
+        } catch (_) {}
+      }
+    } else {
+      for (final item in markedSpans) {
+        final span = item.span;
+        try {
+          final r1 = span.startRow.toInt();
+          final c1 = span.startCol.toInt();
+          final r2 = span.endRow.toInt();
+          final c2 = span.endCol.toInt();
+          if (r1 == r2) {
+            final line = s.line(vrow: BigInt.from(r1));
+            final end = c2.clamp(0, line.length);
+            final start = c1.clamp(0, end);
+            sb.writeln(line.substring(start, end));
+          } else {
+            for (int r = r1; r <= r2; r++) {
+              final line = s.line(vrow: BigInt.from(r));
+              if (r == r1) {
+                sb.writeln(line.substring(c1.clamp(0, line.length)));
+              } else if (r == r2) {
+                sb.write(line.substring(0, c2.clamp(0, line.length)));
+              } else {
+                sb.writeln(line);
+              }
+            }
+            sb.writeln();
+          }
+        } catch (_) {}
+      }
+    }
+    return sb.toString();
+  }
+
   /// Notify listeners unless this controller has already been disposed.
   ///
   /// Scans, sweeps and prefetches all notify *after* an await, by which time
@@ -462,6 +713,11 @@ class FindController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    // Retire the generation as well as flagging disposal. `_notify` already
+    // guards the disposed case, but a `_loadForward` or sweep loop already in
+    // flight tests the generation, not the flag, and would otherwise page the
+    // whole document after the panel closed.
+    _generation++;
     _debounce?.cancel();
     query.dispose();
     replacement.dispose();

@@ -76,16 +76,31 @@ void main() {
   /// overflow by clipping or hiding those controls would pass a bare
   /// `takeException() == null` check but fail this.
   void expectCoreControlsUsable(WidgetTester tester) {
-    expect(tester.takeException(), isNull,
-        reason: 'the panel must not throw a RenderFlex overflow at 500px');
-    expect(find.byTooltip('Find what'), findsOneWidget,
-        reason: 'the query field must still be present and reachable');
-    expect(find.byTooltip('Previous match (Shift+F3)'), findsOneWidget,
-        reason: 'the ▲ step arrow must still be present and reachable');
-    expect(find.byTooltip('Next match (F3)'), findsOneWidget,
-        reason: 'the ▼ step arrow must still be present and reachable');
-    expect(find.byTooltip('Close (Esc)'), findsOneWidget,
-        reason: 'the close button must still be present and reachable');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'the panel must not throw a RenderFlex overflow at 500px',
+    );
+    expect(
+      find.byTooltip('Find what'),
+      findsOneWidget,
+      reason: 'the query field must still be present and reachable',
+    );
+    expect(
+      find.byTooltip('Previous match (Shift+F3)'),
+      findsOneWidget,
+      reason: 'the ▲ step arrow must still be present and reachable',
+    );
+    expect(
+      find.byTooltip('Next match (F3)'),
+      findsOneWidget,
+      reason: 'the ▼ step arrow must still be present and reachable',
+    );
+    expect(
+      find.byTooltip('Close (Esc)'),
+      findsOneWidget,
+      reason: 'the close button must still be present and reachable',
+    );
   }
 
   testWidgets('find panel does not overflow a narrow window', (tester) async {

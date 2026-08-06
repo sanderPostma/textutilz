@@ -20,14 +20,17 @@ void main() {
       expect(ec, 4);
     });
 
-    test('backward selection (anchor after cursor) normalizes to the same span', () {
-      // User dragged upward/leftward: anchor is after the cursor (head).
-      final (sr, sc, er, ec) = normalizeSelection(3, 4, 1, 2);
-      expect(sr, 1);
-      expect(sc, 2);
-      expect(er, 3);
-      expect(ec, 4);
-    });
+    test(
+      'backward selection (anchor after cursor) normalizes to the same span',
+      () {
+        // User dragged upward/leftward: anchor is after the cursor (head).
+        final (sr, sc, er, ec) = normalizeSelection(3, 4, 1, 2);
+        expect(sr, 1);
+        expect(sc, 2);
+        expect(er, 3);
+        expect(ec, 4);
+      },
+    );
 
     test('single-row selection normalizes by column when forward', () {
       final (sr, sc, er, ec) = normalizeSelection(5, 2, 5, 9);

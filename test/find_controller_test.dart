@@ -56,12 +56,15 @@ void main() {
     expect(c.currentMatch!.startRow.toInt(), 0, reason: 'should wrap to start');
   });
 
-  test('wraps to the last match before the start when wrapAround is on', () async {
-    final c = await controllerOver('hit\nhit\n', 'hit');
-    c.wrapAround = true;
-    await c.stepBackward();
-    expect(c.currentMatch!.startRow.toInt(), 1, reason: 'should wrap to end');
-  });
+  test(
+    'wraps to the last match before the start when wrapAround is on',
+    () async {
+      final c = await controllerOver('hit\nhit\n', 'hit');
+      c.wrapAround = true;
+      await c.stepBackward();
+      expect(c.currentMatch!.startRow.toInt(), 1, reason: 'should wrap to end');
+    },
+  );
 
   test('stays on the last match when wrapAround is off', () async {
     final c = await controllerOver('hit\nhit\n', 'hit');
@@ -75,8 +78,11 @@ void main() {
     // More rows than one window, with a match only far past the first window.
     final filler = List.filled(5000, 'x').join('\n');
     final c = await controllerOver('$filler\nneedle\n', 'needle');
-    expect(c.loaded.isNotEmpty, true,
-        reason: 'must page past the first window to find it');
+    expect(
+      c.loaded.isNotEmpty,
+      true,
+      reason: 'must page past the first window to find it',
+    );
     expect(c.currentMatch!.startRow.toInt(), 5000);
   });
 
@@ -159,16 +165,18 @@ void main() {
     expect(c.session!.line(vrow: BigInt.zero), 'nginx NGINX Nginx');
   });
 
-  test('replaceAll writes the replacement verbatim when preserveCase is off',
-      () async {
-    final c = await controllerOver('traefik TRAEFIK Traefik\n', 'traefik');
-    c.matchCase = false;
-    c.preserveCase = false;
-    await c.refresh();
-    c.replacement.text = 'nginx';
-    await c.replaceAll();
-    expect(c.session!.line(vrow: BigInt.zero), 'nginx nginx nginx');
-  });
+  test(
+    'replaceAll writes the replacement verbatim when preserveCase is off',
+    () async {
+      final c = await controllerOver('traefik TRAEFIK Traefik\n', 'traefik');
+      c.matchCase = false;
+      c.preserveCase = false;
+      await c.refresh();
+      c.replacement.text = 'nginx';
+      await c.replaceAll();
+      expect(c.session!.line(vrow: BigInt.zero), 'nginx nginx nginx');
+    },
+  );
 
   test('replaceAll honours the in-selection scope', () async {
     final c = await controllerOver('hit\nhit\nhit\n', 'hit');
@@ -183,8 +191,11 @@ void main() {
     c.replacement.text = 'X';
     final n = await c.replaceAll();
     expect(n, 2);
-    expect(c.session!.line(vrow: BigInt.zero), 'hit',
-        reason: 'outside the selection must be untouched');
+    expect(
+      c.session!.line(vrow: BigInt.zero),
+      'hit',
+      reason: 'outside the selection must be untouched',
+    );
   });
 
   test('replaceCurrent advances so repeated calls walk the document', () async {
@@ -202,11 +213,14 @@ void main() {
     expect(c.counterLabel, '1 of 3');
   });
 
-  test('anchoring picks the first match at or after the given position', () async {
-    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
-    await c.refresh(anchorRow: 1, anchorCol: 0);
-    expect(c.currentMatch!.startRow.toInt(), 1);
-  });
+  test(
+    'anchoring picks the first match at or after the given position',
+    () async {
+      final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+      await c.refresh(anchorRow: 1, anchorCol: 0);
+      expect(c.currentMatch!.startRow.toInt(), 1);
+    },
+  );
 
   test('anchoring past the last match falls back to the first', () async {
     final c = await controllerOver('hit\nhit\n', 'hit');
@@ -224,80 +238,91 @@ void main() {
 
   // --- Fix round 1 regression tests ---------------------------------------
 
-  test('stepForward does not apply state after a superseded generation',
-      () async {
-    // A single early match, plus many more unscanned rows past the first
-    // window, so stepForward must await a further load before it can move.
-    final filler = List.filled(5000, 'x').join('\n');
-    final c = await controllerOver('hit\n$filler\n', 'hit');
-    expect(c.loaded.length, 1);
-    expect(c.currentIndex, 0);
+  test(
+    'stepForward does not apply state after a superseded generation',
+    () async {
+      // A single early match, plus many more unscanned rows past the first
+      // window, so stepForward must await a further load before it can move.
+      final filler = List.filled(5000, 'x').join('\n');
+      final c = await controllerOver('hit\n$filler\n', 'hit');
+      expect(c.loaded.length, 1);
+      expect(c.currentIndex, 0);
 
-    final stepFuture = c.stepForward(); // in flight: awaiting a further load
+      final stepFuture = c.stepForward(); // in flight: awaiting a further load
 
-    // Clearing the query takes refresh()'s early-return path, which is
-    // entirely synchronous (no await): generation bumps and matches reset
-    // deterministically, with no race against the still-pending step.
-    c.query.text = '';
-    await c.refresh();
-    expect(c.currentIndex, -1);
-    expect(c.loaded, isEmpty);
+      // Clearing the query takes refresh()'s early-return path, which is
+      // entirely synchronous (no await): generation bumps and matches reset
+      // deterministically, with no race against the still-pending step.
+      c.query.text = '';
+      await c.refresh();
+      expect(c.currentIndex, -1);
+      expect(c.loaded, isEmpty);
 
-    await stepFuture; // let the now-stale load resolve, whenever that is
+      await stepFuture; // let the now-stale load resolve, whenever that is
 
-    expect(c.currentIndex, -1,
-        reason: "the stale stepForward must not touch the new generation's state");
-    expect(c.loaded, isEmpty);
-  });
+      expect(
+        c.currentIndex,
+        -1,
+        reason:
+            "the stale stepForward must not touch the new generation's state",
+      );
+      expect(c.loaded, isEmpty);
+    },
+  );
 
-  test('a step that pages a new window does not duplicate an in-flight prefetch',
-      () async {
-    // The window boundary is at row 4096 (kSearchWindowRows).
-    //
-    //   rows    0-4075 : filler, no matches
-    //   rows 4076-4095 : 20 matches, the tail of window 0
-    //   rows 4096-4100 :  5 matches, only reachable by paging window 1
-    //
-    // After refresh, `loaded` holds exactly the 20 matches of window 0, and
-    // `_loadedTo` is 4096. `kPrefetchMargin` is 20, so the very FIRST step
-    // already trips `_maybePrefetch` and puts a load of window 1 in flight.
-    //
-    // The steps are fired without awaiting, so later ones run while that
-    // prefetch is still pending. Step 20 exhausts the loaded matches and has
-    // to page a window itself: it reads `_loadedTo` (still 4096, the prefetch
-    // hasn't written it back yet) and, unless it shares the prefetch's
-    // in-flight guard, requests window 1 a SECOND time. Both results then get
-    // appended — 25 matches become 30, five of them duplicates, F3 visits the
-    // same line twice, and the counter can read "30 of 25".
-    final rows = <String>[];
-    for (var i = 0; i < 4076; i++) {
-      rows.add('x');
-    }
-    for (var i = 0; i < 25; i++) {
-      rows.add('hit'); // rows 4076-4100, straddling the window boundary
-    }
-    final content = '${rows.join('\n')}\n';
-    final c = await controllerOver(content, 'hit');
-    expect(c.loaded.length, 20, reason: 'only window 0 is loaded at first');
+  test(
+    'a step that pages a new window does not duplicate an in-flight prefetch',
+    () async {
+      // The window boundary is at row 4096 (kSearchWindowRows).
+      //
+      //   rows    0-4075 : filler, no matches
+      //   rows 4076-4095 : 20 matches, the tail of window 0
+      //   rows 4096-4100 :  5 matches, only reachable by paging window 1
+      //
+      // After refresh, `loaded` holds exactly the 20 matches of window 0, and
+      // `_loadedTo` is 4096. `kPrefetchMargin` is 20, so the very FIRST step
+      // already trips `_maybePrefetch` and puts a load of window 1 in flight.
+      //
+      // The steps are fired without awaiting, so later ones run while that
+      // prefetch is still pending. Step 20 exhausts the loaded matches and has
+      // to page a window itself: it reads `_loadedTo` (still 4096, the prefetch
+      // hasn't written it back yet) and, unless it shares the prefetch's
+      // in-flight guard, requests window 1 a SECOND time. Both results then get
+      // appended — 25 matches become 30, five of them duplicates, F3 visits the
+      // same line twice, and the counter can read "30 of 25".
+      final rows = <String>[];
+      for (var i = 0; i < 4076; i++) {
+        rows.add('x');
+      }
+      for (var i = 0; i < 25; i++) {
+        rows.add('hit'); // rows 4076-4100, straddling the window boundary
+      }
+      final content = '${rows.join('\n')}\n';
+      final c = await controllerOver(content, 'hit');
+      expect(c.loaded.length, 20, reason: 'only window 0 is loaded at first');
 
-    final steps = <Future<void>>[];
-    for (var i = 0; i < 20; i++) {
-      steps.add(c.stepForward()); // deliberately not awaited in turn
-    }
-    await Future.wait(steps);
-    // Let any prefetch still in flight resolve and append.
-    await Future.delayed(const Duration(milliseconds: 300));
+      final steps = <Future<void>>[];
+      for (var i = 0; i < 20; i++) {
+        steps.add(c.stepForward()); // deliberately not awaited in turn
+      }
+      await Future.wait(steps);
+      // Let any prefetch still in flight resolve and append.
+      await Future.delayed(const Duration(milliseconds: 300));
 
-    final seen = <String>{};
-    for (final m in c.loaded) {
-      final key = '${m.startRow}-${m.startCol}-${m.endRow}-${m.endCol}';
-      expect(seen.add(key), true, reason: 'duplicate match: $key');
-    }
-    expect(c.loaded.length, 25,
-        reason: 'window 1 must be appended exactly once');
-    // And the counter must not claim a position past the total.
-    expect(c.currentIndex, lessThan(c.loaded.length));
-  });
+      final seen = <String>{};
+      for (final m in c.loaded) {
+        final key = '${m.startRow}-${m.startCol}-${m.endRow}-${m.endCol}';
+        expect(seen.add(key), true, reason: 'duplicate match: $key');
+      }
+      expect(
+        c.loaded.length,
+        25,
+        reason: 'window 1 must be appended exactly once',
+      );
+      // And the counter must not claim a position past the total.
+      expect(c.currentIndex, lessThan(c.loaded.length));
+    },
+  );
 
   test('only a deliberate move asks the host to scroll to the match', () async {
     // `revealTick` is what the panel watches to decide whether to scroll the
@@ -314,8 +339,11 @@ void main() {
     // Nor is a re-scan anchored on the caret — that is what the host runs
     // after the document was edited under the panel.
     await c.refresh(anchorRow: 1, anchorCol: 0);
-    expect(c.revealTick, afterSearch,
-        reason: 'an anchored re-scan must not scroll the editor');
+    expect(
+      c.revealTick,
+      afterSearch,
+      reason: 'an anchored re-scan must not scroll the editor',
+    );
 
     // Stepping is.
     await c.stepForward();
@@ -384,8 +412,11 @@ void main() {
     painted = await c.scanViewport(0, 4);
     final counted = await c.recount();
     expect(counted, 2, reason: 'only rows 1 and 2 are in the selection');
-    expect(painted.length, counted,
-        reason: 'the painted set must not exceed what the counter counts');
+    expect(
+      painted.length,
+      counted,
+      reason: 'the painted set must not exceed what the counter counts',
+    );
     expect(painted.map((m) => m.startRow.toInt()).toList(), [1, 2]);
     // And it must agree with what stepping walks, too.
     expect(c.loaded.length, counted);
@@ -405,16 +436,51 @@ void main() {
     expect(painted, isEmpty);
   });
 
-  test('sweepRunning does not leak when the query is cleared mid-sweep',
-      () async {
-    final c = await controllerOver('hit\nhit\nhit\n', 'hit');
-    expect(c.sweepRunning, true,
-        reason: 'refresh() starts a background sweep synchronously');
+  test(
+    'sweepRunning does not leak when the query is cleared mid-sweep',
+    () async {
+      final c = await controllerOver('hit\nhit\nhit\n', 'hit');
+      expect(
+        c.sweepRunning,
+        true,
+        reason: 'refresh() starts a background sweep synchronously',
+      );
 
-    c.query.text = '';
-    await c.refresh(); // early return: must not leave the sweep orphaned
-    await c.awaitSweep();
+      c.query.text = '';
+      await c.refresh(); // early return: must not leave the sweep orphaned
+      await c.awaitSweep();
 
-    expect(c.sweepRunning, false);
-  });
+      expect(c.sweepRunning, false);
+    },
+  );
+
+  test(
+    'stepping past the loaded edge keeps scanning instead of wrapping early',
+    () async {
+      // Three windows' worth of rows with a match in the first window and
+      // another well past the second. Paging in a single window at the loaded
+      // edge finds nothing, and stepping used to take that as "document
+      // exhausted" and wrap to the top while a match still lay ahead.
+      final rows = List<String>.generate(
+        kSearchWindowRows * 3,
+        (i) => i == 0 || i == kSearchWindowRows * 2 + 500 ? 'hit' : 'miss',
+      );
+      final c = await controllerOver(rows.join('\n'), 'hit');
+      c.wrapAround = true;
+
+      expect(c.loaded.length, 1, reason: 'only the first window is scanned');
+      expect(c.currentMatch!.startRow.toInt(), 0);
+
+      await c.stepForward();
+      expect(
+        c.currentMatch!.startRow.toInt(),
+        kSearchWindowRows * 2 + 500,
+        reason: 'the far match, not a wrap back to row 0',
+      );
+
+      // And the wrap itself still works once there is genuinely nothing left.
+      await c.stepForward();
+      expect(c.currentMatch!.startRow.toInt(), 0);
+    },
+  );
 }

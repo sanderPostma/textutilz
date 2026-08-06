@@ -6,7 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `read_bytes`, `save_edits_impl`, `scan_file`
+// These functions are ignored because they are not marked as `pub`: `from_metadata`, `has_external_changes`, `read_bytes`, `read`, `save_edits_impl`, `scan_file`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FileVersion`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`
 
 /// Copy arbitrary text to the system clipboard. Keeps clipboard access on the
 /// Rust side (used by "Copy file name" / "Copy file path").

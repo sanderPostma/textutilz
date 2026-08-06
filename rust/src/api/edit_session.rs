@@ -19,8 +19,17 @@ impl CaretPos {
 /// A primitive text operation. `text` in Insert may contain '\n'.
 #[derive(Clone)]
 enum Op {
-    Insert { row: usize, col: usize, text: String },
-    Delete { srow: usize, scol: usize, erow: usize, ecol: usize },
+    Insert {
+        row: usize,
+        col: usize,
+        text: String,
+    },
+    Delete {
+        srow: usize,
+        scol: usize,
+        erow: usize,
+        ecol: usize,
+    },
 }
 
 /// One undo step: one or more primitives applied in order. Undo replays their
@@ -55,6 +64,27 @@ pub struct EditSession {
     /// (the classic word-at-a-time behavior). When false, every keystroke is its
     /// own step. Shared app setting; applies to all editors alike.
     coalesce: bool,
+    /// Bumped by every content change. The markup cache compares against it to
+    /// know whether its checkpoints still describe this document.
+    revision: u64,
+    /// Lexer resume checkpoints for the last language asked about. Rebuilt on
+    /// demand rather than eagerly, so a document nobody colours never pays for
+    /// one.
+    markup_cache: Option<MarkupCache>,
+}
+
+/// Lexer checkpoints for one document revision and one language.
+///
+/// Checkpoints are what make viewport colouring affordable on a large file: a
+/// painter that needs row 40,000 resumes from the nearest stored state and
+/// re-lexes at most `CHECKPOINT_ROWS` rows, instead of lexing from row 0.
+struct MarkupCache {
+    language: crate::markup::MarkupLanguage,
+    revision: u64,
+    checkpoints: Vec<crate::markup::LexState>,
+    /// Matched delimiter pairs, kept so that moving the caret is a search over
+    /// an existing list rather than a fresh pass over the document.
+    pairs: Vec<crate::markup::BracketPair>,
 }
 
 // ---- UTF-16 column helpers (match Dart's code-unit columns) ----------------
@@ -98,6 +128,8 @@ impl EditSession {
             redo: Vec::new(),
             group: None,
             coalesce: true,
+            revision: 0,
+            markup_cache: None,
         })
     }
 
@@ -185,19 +217,29 @@ impl EditSession {
 
     /// Calculate selection character count extremely fast (combining small range exact counting and large range O(1) estimation)
     #[flutter_rust_bridge::frb(sync)]
-    pub fn selection_char_count(&self, mut r1: usize, mut c1: usize, mut r2: usize, mut c2: usize) -> usize {
+    pub fn selection_char_count(
+        &self,
+        mut r1: usize,
+        mut c1: usize,
+        mut r2: usize,
+        mut c2: usize,
+    ) -> usize {
         let line_count = self.line_count();
         if line_count == 0 {
             return 0;
         }
-        if r1 >= line_count { r1 = line_count - 1; }
-        if r2 >= line_count { r2 = line_count - 1; }
-        
+        if r1 >= line_count {
+            r1 = line_count - 1;
+        }
+        if r2 >= line_count {
+            r2 = line_count - 1;
+        }
+
         if r1 > r2 || (r1 == r2 && c1 > c2) {
             std::mem::swap(&mut r1, &mut r2);
             std::mem::swap(&mut c1, &mut c2);
         }
-        
+
         let mut total_chars = 0;
         let diff = r2 - r1;
         if diff < 100 {
@@ -234,6 +276,14 @@ impl EditSession {
         !self.undo.is_empty()
     }
 
+    /// True when the file at this session's path no longer matches the
+    /// version used to build the base line index. Detection stays in Rust so
+    /// callers never need to duplicate filesystem identity/mtime logic.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn has_external_changes(&self) -> bool {
+        self.base.has_external_changes()
+    }
+
     #[flutter_rust_bridge::frb(sync)]
     pub fn line_count(&self) -> usize {
         (self.base.get_line_count() as i64 + self.added_lines) as usize
@@ -256,8 +306,10 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn refresh(&mut self) -> anyhow::Result<()> {
+        self.revision = self.revision.wrapping_add(1);
         self.base.refresh()?;
-        self.added_lines = 0;        self.edited_rows.clear();
+        self.added_lines = 0;
+        self.edited_rows.clear();
         self.overlay.clear();
         self.undo.clear();
         self.redo.clear();
@@ -357,7 +409,8 @@ impl EditSession {
             vec.insert(insert_at, last);
             self.added_lines += (n - 1) as i64;
             end = CaretPos::new(vrow + (n - 1), last_col);
-        }        end
+        }
+        end
     }
 
     /// Apply a delete over a normalized range; return the removed text and the
@@ -474,6 +527,7 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn insert(&mut self, row: usize, col: usize, text: String) -> CaretPos {
+        self.revision = self.revision.wrapping_add(1);
         let end = self.do_insert(row, col, &text);
         let inverse = Op::Delete {
             srow: row,
@@ -494,6 +548,7 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn delete(&mut self, srow: usize, scol: usize, erow: usize, ecol: usize) -> CaretPos {
+        self.revision = self.revision.wrapping_add(1);
         // Normalize so start <= end.
         let (srow, scol, erow, ecol) = if srow > erow || (srow == erow && scol > ecol) {
             (erow, ecol, srow, scol)
@@ -551,23 +606,27 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn undo(&mut self) -> Option<CaretPos> {
+        self.revision = self.revision.wrapping_add(1);
         let entry = self.undo.pop()?;
         let mut caret = CaretPos::new(entry.end_row, entry.end_col);
         // Apply inverses in reverse order.
         for (_forward, inverse) in entry.prims.iter().rev() {
             caret = self.apply(inverse);
         }
-        self.redo.push(entry);        Some(caret)
+        self.redo.push(entry);
+        Some(caret)
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn redo(&mut self) -> Option<CaretPos> {
+        self.revision = self.revision.wrapping_add(1);
         let entry = self.redo.pop()?;
         let mut caret = CaretPos::new(entry.end_row, entry.end_col);
         for (forward, _inverse) in entry.prims.iter() {
             caret = self.apply(forward);
         }
-        self.undo.push(entry);        Some(caret)
+        self.undo.push(entry);
+        Some(caret)
     }
 
     /// Replace the entire document with `text`, recorded as a single undoable
@@ -575,6 +634,7 @@ impl EditSession {
     /// rewrite the whole buffer. Returns the caret past the inserted text.
     #[flutter_rust_bridge::frb(sync)]
     pub fn replace_all(&mut self, text: String) -> CaretPos {
+        self.revision = self.revision.wrapping_add(1);
         self.begin_group();
         let last_row = self.line_count().saturating_sub(1);
         let last_col = u16_len(&self.get_line_visual(last_row));
@@ -602,7 +662,8 @@ impl EditSession {
         self.added_lines = 0;
         self.undo.clear();
         self.redo.clear();
-        self.group = None;    }
+        self.group = None;
+    }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn save(&mut self) -> anyhow::Result<()> {
@@ -614,6 +675,7 @@ impl EditSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn save_as(&mut self, new_path: String) -> anyhow::Result<()> {
+        self.revision = self.revision.wrapping_add(1);
         let edits = self.build_edits();
         self.base.save_edits_as(new_path, edits)?;
         self.reset_after_save();
@@ -682,7 +744,9 @@ impl EditSession {
         let mut out = Vec::new();
         let mut at = 0usize;
         while at <= text.len() {
-            let Some(m) = re.find_at(&text, at) else { break };
+            let Some(m) = re.find_at(&text, at) else {
+                break;
+            };
             let (srow, scol) = locate(m.start());
             if srow >= to {
                 break;
@@ -749,6 +813,7 @@ impl EditSession {
         replacement: String,
         preserve_case: bool,
     ) -> anyhow::Result<CaretPos> {
+        self.revision = self.revision.wrapping_add(1);
         let text = self.expand_for_span(&query, &span, &replacement, preserve_case)?;
         self.begin_group();
         self.delete(span.start_row, span.start_col, span.end_row, span.end_col);
@@ -759,6 +824,14 @@ impl EditSession {
 
     /// The `[from, to)` row range worth scanning for `scope` in a document of
     /// `total` rows. Without a scope that is the whole document.
+    ///
+    /// This is a performance narrowing, not a filter: `span_in_scope` still
+    /// decides what counts. It is *nearly* output-neutral — everything the
+    /// clamp skips would have been rejected anyway — with one exception. A
+    /// greedy dot-all pattern's match extent depends on how much text was
+    /// scanned, so scanning less can split what would have been one long match
+    /// into several shorter ones that now fit inside the scope. The clamp can
+    /// therefore add matches; it can never drop one.
     fn scope_row_bounds(
         scope: &Option<crate::api::search::SpanScope>,
         total: usize,
@@ -790,6 +863,7 @@ impl EditSession {
         scope: Option<crate::api::search::SpanScope>,
         preserve_case: bool,
     ) -> anyhow::Result<usize> {
+        self.revision = self.revision.wrapping_add(1);
         use crate::api::search::{SearchQuery, SEARCH_WINDOW_ROWS};
 
         // Collect first: the document must not change while scanning.
@@ -819,8 +893,7 @@ impl EditSession {
         let mut texts = Vec::with_capacity(found.len());
         for span in found {
             let text = self.expand_for_span(&query, &span, &replacement, preserve_case)?;
-            let empty_span =
-                (span.start_row, span.start_col) == (span.end_row, span.end_col);
+            let empty_span = (span.start_row, span.start_col) == (span.end_row, span.end_col);
             if empty_span && text.is_empty() {
                 continue;
             }
@@ -884,6 +957,145 @@ impl EditSession {
     }
 }
 
+// ---- Markup: colouring, folding, validation --------------------------------
+
+impl EditSession {
+    /// Every row of the document, as the lexers want them.
+    fn markup_rows(&self) -> Vec<String> {
+        (0..self.line_count()).map(|i| self.line(i)).collect()
+    }
+
+    /// The checkpoints for `language`, rebuilding them if the document changed
+    /// or a different language was asked for.
+    fn markup_checkpoints(&mut self, language: crate::markup::MarkupLanguage) -> &[crate::markup::LexState] {
+        let stale = match &self.markup_cache {
+            Some(cache) => cache.language != language || cache.revision != self.revision,
+            None => true,
+        };
+        if stale {
+            let rows = self.markup_rows();
+            self.markup_cache = Some(MarkupCache {
+                language,
+                revision: self.revision,
+                checkpoints: crate::markup::checkpoints_for(&rows, language),
+                pairs: crate::markup::analyse_rows(&rows, language).pairs,
+            });
+        }
+        self.markup_cache
+            .as_ref()
+            .map(|c| c.checkpoints.as_slice())
+            .unwrap_or_default()
+    }
+
+    /// Syntax tokens for the rows in `[from_row, to_row)`.
+    ///
+    /// Only the requested rows are lexed. The state they start in comes from
+    /// the nearest stored checkpoint, warmed forward by at most
+    /// `CHECKPOINT_ROWS` rows — so scrolling to the middle of a large document
+    /// costs the same as scrolling to the top of it.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn markup_tokens(
+        &mut self,
+        language: crate::api::structured::StructuredLanguage,
+        from_row: usize,
+        to_row: usize,
+    ) -> Vec<crate::api::structured::StructuredRowTokens> {
+        let language: crate::markup::MarkupLanguage = language.into();
+        let count = self.line_count();
+        let from = from_row.min(count);
+        let to = to_row.clamp(from, count);
+        if from == to || !language.is_structured() {
+            return Vec::new();
+        }
+
+        let (resume_row, mut state) = {
+            let checkpoints = self.markup_checkpoints(language);
+            crate::markup::lexer::resume_point(checkpoints, from as u32)
+        };
+
+        let Some(lexer) = crate::markup::lexer_for(language) else {
+            return Vec::new();
+        };
+        let mut scratch = crate::markup::lexer::RowLexemes::new();
+        for row in resume_row as usize..from {
+            scratch.clear();
+            state = lexer.lex_row(&self.line(row), state, &mut scratch);
+        }
+
+        let rows: Vec<String> = (from..to).map(|i| self.line(i)).collect();
+        crate::api::structured::wire_row_tokens(crate::markup::tokens_for(
+            &rows,
+            language,
+            state,
+            from as u32,
+        ))
+    }
+
+    /// The delimiter pair the caret is on or inside, if any.
+    ///
+    /// Reads from the cached analysis, so dragging the caret through a large
+    /// document does not re-lex it on every keystroke.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn markup_pair_at(
+        &mut self,
+        language: crate::api::structured::StructuredLanguage,
+        row: usize,
+        col: usize,
+    ) -> Option<crate::api::structured::StructuredPair> {
+        let language: crate::markup::MarkupLanguage = language.into();
+        if !language.is_structured() {
+            return None;
+        }
+        self.markup_checkpoints(language);
+        let pairs = self
+            .markup_cache
+            .as_ref()
+            .map(|c| c.pairs.as_slice())
+            .unwrap_or_default();
+        crate::markup::pair_at(pairs, row as u32, col as u32)
+            .map(crate::api::structured::wire_pair_public)
+    }
+
+    /// Fold regions, bracket pairs and diagnostics for the whole document.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn markup_analysis(
+        &mut self,
+        language: crate::api::structured::StructuredLanguage,
+    ) -> crate::api::structured::StructuredAnalysis {
+        let rows = self.markup_rows();
+        crate::api::structured::wire_analysis(crate::markup::analyse_rows(&rows, language.into()))
+    }
+
+    /// The document's effective format.
+    ///
+    /// A user-pinned `language_override` wins outright; otherwise the format is
+    /// detected, sniffing the opening rows when the extension and content type
+    /// say nothing useful. The precedence lives here rather than at the call
+    /// site so that everything asking "what is this document?" — colouring,
+    /// folding, validation, the Tools menu, the status bar — gets one answer.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn detect_markup_language(
+        &self,
+        extension: String,
+        content_type: String,
+        language_override: Option<crate::api::structured::StructuredLanguage>,
+    ) -> crate::api::structured::StructuredLanguage {
+        if let Some(pinned) = language_override {
+            return pinned;
+        }
+        // A few dozen rows is plenty to recognise a format, and bounds the cost
+        // for a very large file.
+        let sample: Vec<String> = (0..self.line_count().min(64))
+            .map(|i| self.line(i))
+            .collect();
+        crate::api::structured::detect_structured_language(
+            extension,
+            content_type,
+            sample.join("\n"),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -896,7 +1108,11 @@ mod tests {
     fn session(content: &str) -> (EditSession, String) {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let path = std::env::temp_dir()
-            .join(format!("textutilz_es_test_{}_{}.txt", std::process::id(), n))
+            .join(format!(
+                "textutilz_es_test_{}_{}.txt",
+                std::process::id(),
+                n
+            ))
             .to_string_lossy()
             .to_string();
         let mut f = std::fs::File::create(&path).unwrap();
@@ -928,6 +1144,46 @@ mod tests {
         assert_eq!(s.line_count(), 3);
         assert_eq!(s.line(0), "alpha");
         assert_eq!(s.line(2), "gamma");
+    }
+
+    #[test]
+    fn detects_external_file_change_until_refresh() {
+        let (mut s, path) = session("alpha\nbeta");
+        assert!(!s.has_external_changes());
+
+        std::fs::write(&path, "replacement\nwith\nmore\nrows").unwrap();
+        assert!(s.has_external_changes());
+
+        s.refresh().unwrap();
+        assert!(!s.has_external_changes());
+        assert_eq!(doc(&s), "replacement\nwith\nmore\nrows");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_external_rewrite_keeps_indexed_version_coherent_until_refresh() {
+        let (mut s, path) = session("old first\nold second");
+        let replacement = format!("{}.replacement", path);
+        std::fs::write(&replacement, "new\ncontent\nwith\nmore rows").unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+
+        assert!(s.has_external_changes());
+        assert_eq!(
+            doc(&s),
+            "old first\nold second",
+            "stale offsets must keep reading the exact file they indexed"
+        );
+
+        s.refresh().unwrap();
+        assert_eq!(doc(&s), "new\ncontent\nwith\nmore rows");
+    }
+
+    #[test]
+    fn in_session_edits_are_not_external_changes() {
+        let (mut s, _path) = session("alpha");
+        s.insert(0, 5, " beta".to_string());
+        assert!(s.is_dirty());
+        assert!(!s.has_external_changes());
     }
 
     #[test]
@@ -1129,7 +1385,11 @@ mod tests {
     fn create_scratch_writes_and_opens() {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let path = std::env::temp_dir()
-            .join(format!("textutilz_scratch_{}_{}.txt", std::process::id(), n))
+            .join(format!(
+                "textutilz_scratch_{}_{}.txt",
+                std::process::id(),
+                n
+            ))
             .to_string_lossy()
             .to_string();
         let s = EditSession::create_scratch(path.clone(), "line1\nline2".to_string()).unwrap();
@@ -1220,7 +1480,9 @@ mod tests {
     #[test]
     fn find_matches_multiline_pattern_inside_window() {
         let (s, _p) = session("alpha\nbeta\ngamma\n");
-        let m = s.find_in_rows(regex_query("alpha.beta", true), 0, 10, None).unwrap();
+        let m = s
+            .find_in_rows(regex_query("alpha.beta", true), 0, 10, None)
+            .unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!((m[0].start_row, m[0].start_col), (0, 0));
         assert_eq!((m[0].end_row, m[0].end_col), (1, 4));
@@ -1240,10 +1502,15 @@ mod tests {
         // point is to pin the test to the constant's current value (64) so
         // that shrinking the constant breaks this test instead of silently
         // moving the goalposts with it.
-        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
+        assert_eq!(
+            SEARCH_WINDOW_OVERLAP_ROWS, 64,
+            "test rows below assume this"
+        );
         let content = n_row_document(100);
         let (s, _p) = session(&content);
-        let m = s.find_in_rows(regex_query("row9.*row73", true), 0, 10, None).unwrap();
+        let m = s
+            .find_in_rows(regex_query("row9.*row73", true), 0, 10, None)
+            .unwrap();
         assert_eq!(m.len(), 1, "overlap should catch the straddling match");
         assert_eq!((m[0].start_row, m[0].start_col), (9, 0));
         assert_eq!((m[0].end_row, m[0].end_col), (73, 5));
@@ -1261,10 +1528,15 @@ mod tests {
         // Hardcoded to 74 (one past the 73 in the test above) for the same
         // reason: pinned to the constant's current value of 64, not derived
         // from it, so growing the constant would break this test.
-        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64, "test rows below assume this");
+        assert_eq!(
+            SEARCH_WINDOW_OVERLAP_ROWS, 64,
+            "test rows below assume this"
+        );
         let content = n_row_document(100);
         let (s, _p) = session(&content);
-        let m = s.find_in_rows(regex_query("row9.*row74", true), 0, 10, None).unwrap();
+        let m = s
+            .find_in_rows(regex_query("row9.*row74", true), 0, 10, None)
+            .unwrap();
         assert!(
             m.is_empty(),
             "a match reaching past the overlap window must not be found"
@@ -1307,7 +1579,9 @@ mod tests {
         // every byte offset 0..=3: before 'a', before 'b', before '\n' (still
         // row 0, since '\n' is the row separator, not row 1's content), and
         // at the start of the empty row 1.
-        let m = s.find_in_rows(regex_query("x*", false), 0, 10, None).unwrap();
+        let m = s
+            .find_in_rows(regex_query("x*", false), 0, 10, None)
+            .unwrap();
         let spans: Vec<(usize, usize, usize, usize)> = m
             .iter()
             .map(|sp| (sp.start_row, sp.start_col, sp.end_row, sp.end_col))
@@ -1322,12 +1596,9 @@ mod tests {
     #[test]
     fn find_reports_error_for_invalid_regex() {
         let (s, _p) = session("anything\n");
-        assert!(s.find_in_rows(regex_query("a(", false), 0, 10, None).is_err());
-    }
-
-    #[test]
-    fn overlap_constant_is_used() {
-        assert_eq!(SEARCH_WINDOW_OVERLAP_ROWS, 64);
+        assert!(s
+            .find_in_rows(regex_query("a(", false), 0, 10, None)
+            .is_err());
     }
 
     use crate::api::search::{MatchSpan, SpanScope};
@@ -1421,7 +1692,8 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(query("hit"), first, "X".to_string(), false).unwrap();
+        s.replace_span(query("hit"), first, "X".to_string(), false)
+            .unwrap();
         // Trailing "\n" in the fixture makes the file end with a phantom
         // empty line, same as every other doc() assertion in this file.
         assert_eq!(doc(&s), "X hit\n");
@@ -1437,7 +1709,8 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(query("hit"), first, "LONGER".to_string(), false).unwrap();
+        s.replace_span(query("hit"), first, "LONGER".to_string(), false)
+            .unwrap();
         s.undo();
         assert_eq!(doc(&s), "hit hit\n");
     }
@@ -1455,14 +1728,17 @@ mod tests {
             end_row: spans[0].end_row,
             end_col: spans[0].end_col,
         };
-        s.replace_span(q, first, "$2:$1".to_string(), false).unwrap();
+        s.replace_span(q, first, "$2:$1".to_string(), false)
+            .unwrap();
         assert_eq!(doc(&s), "host:user\n");
     }
 
     #[test]
     fn replace_all_replaces_every_match() {
         let (mut s, _p) = session("hit\nmiss\nhit\n");
-        let n = s.replace_all_in_rows(query("hit"), "X".to_string(), None, false).unwrap();
+        let n = s
+            .replace_all_in_rows(query("hit"), "X".to_string(), None, false)
+            .unwrap();
         assert_eq!(n, 2);
         assert_eq!(doc(&s), "X\nmiss\nX\n");
     }
@@ -1471,21 +1747,24 @@ mod tests {
     fn replace_all_handles_longer_replacement() {
         // A backwards pass keeps earlier spans valid as later ones grow.
         let (mut s, _p) = session("a a a\n");
-        s.replace_all_in_rows(query("a"), "LONG".to_string(), None, false).unwrap();
+        s.replace_all_in_rows(query("a"), "LONG".to_string(), None, false)
+            .unwrap();
         assert_eq!(doc(&s), "LONG LONG LONG\n");
     }
 
     #[test]
     fn replace_all_handles_shorter_replacement() {
         let (mut s, _p) = session("aaa aaa\n");
-        s.replace_all_in_rows(query("aaa"), "b".to_string(), None, false).unwrap();
+        s.replace_all_in_rows(query("aaa"), "b".to_string(), None, false)
+            .unwrap();
         assert_eq!(doc(&s), "b b\n");
     }
 
     #[test]
     fn replace_all_undoes_and_redoes_as_one_step() {
         let (mut s, _p) = session("hit\nhit\nhit\n");
-        s.replace_all_in_rows(query("hit"), "X".to_string(), None, false).unwrap();
+        s.replace_all_in_rows(query("hit"), "X".to_string(), None, false)
+            .unwrap();
         assert_eq!(doc(&s), "X\nX\nX\n");
         s.undo();
         assert_eq!(doc(&s), "hit\nhit\nhit\n", "one undo must revert all");
@@ -1558,7 +1837,9 @@ mod tests {
     #[test]
     fn replace_all_with_no_match_makes_no_undo_entry() {
         let (mut s, _p) = session("alpha\n");
-        let n = s.replace_all_in_rows(query("zzz"), "X".to_string(), None, false).unwrap();
+        let n = s
+            .replace_all_in_rows(query("zzz"), "X".to_string(), None, false)
+            .unwrap();
         assert_eq!(n, 0);
         assert!(!s.can_undo(), "a no-op replace must not push an undo step");
     }
@@ -1645,12 +1926,16 @@ mod tests {
         // The clamping itself. `find_in_rows`, `count_matches` and
         // `replace_all_in_rows` all narrow their scan range through this, so
         // paging towards a selection far down a large document does no
-        // per-window work before reaching it. Note this is a *performance*
-        // property: clamping changes no output, because everything it skips
-        // would have been filtered out by `span_in_scope` anyway. That is why
-        // it is pinned here, at the one place the arithmetic lives, rather
-        // than through an output assertion that could not tell the
-        // difference.
+        // per-window work before reaching it. It is pinned here, at the one
+        // place the arithmetic lives, because an output assertion mostly
+        // cannot tell a clamped scan from an unclamped one.
+        //
+        // Do not read that as "clamping changes no output" — see the
+        // note on `scope_row_bounds`. For a greedy dot-all pattern the clamp
+        // can *add* a match, because how much was scanned decides how far a
+        // match extends. The behaviour is fine, and arguably better, since the
+        // clamp can only add and never drop; the reason it is untestable here
+        // is the arithmetic, not an equivalence that does not hold.
         let scope = SpanScope {
             start_row: 100,
             start_col: 3,
@@ -1710,7 +1995,9 @@ mod tests {
         // for its capture groups.
         let (mut s, _p) = session("alpha\nbeta\ngamma\n");
         let q = regex_query(r"(\w+)\n(\w+)", true);
-        let spans = s.find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None).unwrap();
+        let spans = s
+            .find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None)
+            .unwrap();
         assert_eq!(spans.len(), 1, "one two-row match");
         let first = MatchSpan {
             start_row: spans[0].start_row,
@@ -1719,7 +2006,8 @@ mod tests {
             end_col: spans[0].end_col,
         };
         assert_eq!((first.start_row, first.end_row), (0, 1));
-        s.replace_span(q, first, "$2-$1".to_string(), false).unwrap();
+        s.replace_span(q, first, "$2-$1".to_string(), false)
+            .unwrap();
         assert_eq!(doc(&s), "beta-alpha\ngamma\n");
     }
 
@@ -1731,7 +2019,9 @@ mod tests {
         // the reassembled text won't re-match the pattern.
         let (mut s, _p) = session("😀alpha\nbeta😀\ntail\n");
         let q = regex_query(r"(\w+)\n(\w+)", true);
-        let spans = s.find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None).unwrap();
+        let spans = s
+            .find_in_rows(regex_query(r"(\w+)\n(\w+)", true), 0, 10, None)
+            .unwrap();
         assert_eq!(spans.len(), 1);
         let first = MatchSpan {
             start_row: spans[0].start_row,
@@ -1743,7 +2033,166 @@ mod tests {
         // "beta" ends at column 4 on row 1 (before that row's trailing emoji).
         assert_eq!((first.start_row, first.start_col), (0, 2));
         assert_eq!((first.end_row, first.end_col), (1, 4));
-        s.replace_span(q, first, "$2-$1".to_string(), false).unwrap();
+        s.replace_span(q, first, "$2-$1".to_string(), false)
+            .unwrap();
         assert_eq!(doc(&s), "😀beta-alpha😀\ntail\n");
+    }
+
+    // ---- Markup ------------------------------------------------------------
+
+    use crate::api::structured::{StructuredLanguage, StructuredTokenKind};
+
+    fn json_doc(pairs: usize) -> String {
+        let body = (0..pairs)
+            .map(|i| format!("  \"k{i}\": {i},"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{{\n{body}\n  \"last\": 0\n}}")
+    }
+
+    /// The whole point of the checkpoint cache: tokens for a window deep in the
+    /// document must equal what a full pass would produce there.
+    #[test]
+    fn markup_tokens_for_a_deep_window_match_a_full_pass() {
+        let (mut s, _p) = session(&json_doc(600));
+        let deep = s.markup_tokens(StructuredLanguage::Json, 500, 510);
+        let all = s.markup_tokens(StructuredLanguage::Json, 0, s.line_count());
+        assert_eq!(deep.len(), 10);
+        for (i, row) in deep.iter().enumerate() {
+            let full = &all[500 + i];
+            assert_eq!(row.row, full.row);
+            let kinds: Vec<_> = row.tokens.iter().map(|t| t.kind).collect();
+            let expected: Vec<_> = full.tokens.iter().map(|t| t.kind).collect();
+            assert_eq!(kinds, expected, "row {}", row.row);
+        }
+        // And keys are still keys that far down, which only the carried
+        // container stack can establish.
+        assert!(deep[0]
+            .tokens
+            .iter()
+            .any(|t| t.kind == StructuredTokenKind::Key));
+    }
+
+    #[test]
+    fn markup_tokens_reflect_an_edit_rather_than_a_stale_cache() {
+        let (mut s, _p) = session("{\n  \"a\": 1\n}");
+        let before = s.markup_tokens(StructuredLanguage::Json, 1, 2);
+        assert!(before[0]
+            .tokens
+            .iter()
+            .any(|t| t.kind == StructuredTokenKind::Key));
+        // Open a string on row 0 so row 1 is now inside it.
+        s.insert(0, 1, "\"".to_string());
+        let after = s.markup_tokens(StructuredLanguage::Json, 1, 2);
+        assert!(
+            after[0]
+                .tokens
+                .iter()
+                .all(|t| t.kind != StructuredTokenKind::Key),
+            "row 1 is inside a string now, so it holds no key"
+        );
+    }
+
+    #[test]
+    fn markup_tokens_clamp_out_of_range_windows() {
+        let (mut s, _p) = session("{\n}");
+        assert!(s.markup_tokens(StructuredLanguage::Json, 99, 200).is_empty());
+        assert!(s.markup_tokens(StructuredLanguage::Json, 1, 0).is_empty());
+        assert!(s
+            .markup_tokens(StructuredLanguage::PlainText, 0, 2)
+            .is_empty());
+    }
+
+    #[test]
+    fn markup_analysis_reports_folds_and_errors() {
+        let (mut s, _p) = session("{\n  \"a\": 1\n}");
+        let a = s.markup_analysis(StructuredLanguage::Json);
+        assert_eq!(a.folds.len(), 1);
+        assert!(a.diagnostics.is_empty());
+
+        let (mut bad, _p2) = session("{\n  \"a\" 1\n}");
+        let a = bad.markup_analysis(StructuredLanguage::Json);
+        assert_eq!(a.diagnostics.len(), 1);
+        assert_eq!(a.diagnostics[0].row, 1);
+    }
+
+    /// An unsaved scratch document has no meaningful extension, so the format
+    /// has to come from the content.
+    #[test]
+    fn detection_sniffs_content_when_the_extension_says_nothing() {
+        let (s, _p) = session("<?xml version=\"1.0\"?>\n<r/>");
+        assert_eq!(
+            s.detect_markup_language("txt".into(), "Plain Text".into(), None),
+            StructuredLanguage::Xml
+        );
+
+        let (s, _p) = session("name: textutilz\nversion: 1");
+        assert_eq!(
+            s.detect_markup_language("txt".into(), "Plain Text".into(), None),
+            StructuredLanguage::Yaml
+        );
+
+        let (s, _p) = session("just some notes\nnothing structured here");
+        assert_eq!(
+            s.detect_markup_language("txt".into(), "Plain Text".into(), None),
+            StructuredLanguage::PlainText
+        );
+    }
+
+    /// The point of the override: a document whose extension lies, or a scratch
+    /// buffer with nothing in it yet, can still be pinned by hand.
+    #[test]
+    fn a_pinned_language_beats_every_detection_signal() {
+        // Extension, content type and content all agree on XML; the pin wins.
+        let (s, _p) = session("<?xml version=\"1.0\"?>\n<r/>");
+        assert_eq!(
+            s.detect_markup_language(
+                "xml".into(),
+                "application/xml".into(),
+                Some(StructuredLanguage::Yaml),
+            ),
+            StructuredLanguage::Yaml
+        );
+
+        // An empty scratch buffer detects as plain text, but can be pinned.
+        let (s, _p) = session("");
+        assert_eq!(
+            s.detect_markup_language("".into(), "".into(), Some(StructuredLanguage::Xml)),
+            StructuredLanguage::Xml
+        );
+    }
+
+    /// Pinning to plain text is a real choice — "stop colouring this" — and must
+    /// not be confused with having no pin at all.
+    #[test]
+    fn pinning_plain_text_suppresses_detection() {
+        let (s, _p) = session("{\n  \"a\": 1\n}");
+        assert_eq!(
+            s.detect_markup_language("json".into(), "".into(), None),
+            StructuredLanguage::Json
+        );
+        assert_eq!(
+            s.detect_markup_language(
+                "json".into(),
+                "".into(),
+                Some(StructuredLanguage::PlainText),
+            ),
+            StructuredLanguage::PlainText
+        );
+    }
+
+    /// The JSON5 dialect switch is now a pin, so it has to survive a document
+    /// that detection would call strict JSON.
+    #[test]
+    fn pinning_json5_over_a_strict_json_document_holds() {
+        let (s, _p) = session("{\n  \"a\": 1\n}");
+        assert_eq!(
+            s.detect_markup_language(
+                "json".into(),
+                "application/json".into(),
+                Some(StructuredLanguage::Json5),
+            ),
+            StructuredLanguage::Json5
+        );
     }
 }

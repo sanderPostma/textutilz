@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'docked_bar.dart';
 import 'find_state.dart';
@@ -89,9 +90,9 @@ class FindPanelState extends State<FindPanel> {
   /// only as an unhandled async error and the button appears to do nothing.
   void _reportFailure(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Replace failed: $error')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Replace failed: $error')));
   }
 
   Future<void> _replaceCurrent() async {
@@ -158,25 +159,33 @@ class FindPanelState extends State<FindPanel> {
 
   Widget _leadingIcon() => const Icon(Icons.search, size: 16);
 
-  Widget _modeToggle() => Tooltip(
-    message: c.mode == FindPanelMode.find
-        ? 'Switch to Replace'
-        : 'Switch to Find',
-    child: IconButton(
-      icon: Icon(
-        c.mode == FindPanelMode.find
-            ? Icons.keyboard_arrow_right
-            : Icons.keyboard_arrow_down,
-        size: 16,
+  Widget _modeToggle() {
+    final (icon, message, nextMode) = switch (c.mode) {
+      FindPanelMode.find => (
+        Icons.keyboard_arrow_right,
+        'Switch to Replace',
+        FindPanelMode.replace,
       ),
-      visualDensity: VisualDensity.compact,
-      onPressed: () => c.setMode(
-        c.mode == FindPanelMode.find
-            ? FindPanelMode.replace
-            : FindPanelMode.find,
+      FindPanelMode.replace => (
+        Icons.keyboard_arrow_down,
+        'Switch to Mark',
+        FindPanelMode.mark,
       ),
-    ),
-  );
+      FindPanelMode.mark => (
+        Icons.bookmark,
+        'Switch to Find',
+        FindPanelMode.find,
+      ),
+    };
+    return Tooltip(
+      message: message,
+      child: IconButton(
+        icon: Icon(icon, size: 16),
+        visualDensity: VisualDensity.compact,
+        onPressed: () => c.setMode(nextMode),
+      ),
+    );
+  }
 
   /// The query field is `Flexible` rather than a fixed `SizedBox(width:
   /// 260)`, so it shrinks (down to [minWidth]) instead of forcing the row
@@ -376,9 +385,19 @@ class FindPanelState extends State<FindPanel> {
         _modeToggle(),
         _queryField(hasError),
         _optionCluster(),
-        _prevArrow(),
-        _nextArrow(),
-        _counterLabel(hasError),
+        if (c.mode != FindPanelMode.mark) ...[
+          _prevArrow(),
+          _nextArrow(),
+          Tooltip(
+            message:
+                'Find all occurrences in the document and show results pane',
+            child: TextButton(
+              onPressed: c.isSearchResultsLoading ? null : () => c.findAll(),
+              child: Text(c.isSearchResultsLoading ? 'Finding…' : 'Find All'),
+            ),
+          ),
+          _counterLabel(hasError),
+        ],
         const Spacer(flex: 3),
       ],
     );
@@ -442,7 +461,8 @@ class FindPanelState extends State<FindPanel> {
                 ),
                 _toggle(
                   label: 'Aa→',
-                  tooltip: 'Preserve case — re-case each replacement to match '
+                  tooltip:
+                      'Preserve case — re-case each replacement to match '
                       'the text it replaces (ALL CAPS, Capitalised, lower). '
                       'Mixed-case matches keep what you typed.',
                   value: c.preserveCase,
@@ -466,6 +486,78 @@ class FindPanelState extends State<FindPanel> {
                           ? 'Replace All in selection'
                           : 'Replace All',
                     ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (c.mode == FindPanelMode.mark) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                const SizedBox(width: 22),
+                _toggle(
+                  label: '🔖',
+                  tooltip: 'Bookmark line for marked matches',
+                  value: c.bookmarkLine,
+                  onChanged: (v) => setState(() => c.bookmarkLine = v),
+                ),
+                Tooltip(
+                  message: 'Mark all occurrences of search pattern',
+                  child: TextButton(
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final n = await c.markAll();
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            n == 1 ? '1 item marked' : '$n items marked',
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Mark All'),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Clear all marks and bookmarked lines',
+                  child: TextButton(
+                    onPressed: () {
+                      c.clearMarks();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Cleared all marks')),
+                      );
+                    },
+                    child: const Text('Clear All Marks'),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Copy marked text to clipboard',
+                  child: TextButton(
+                    onPressed: () {
+                      final text = c.copyMarkedText();
+                      if (text.isNotEmpty) {
+                        Clipboard.setData(ClipboardData(text: text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Copied marked text (${text.length} chars)',
+                            ),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('No marked text to copy'),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Copy Marked Text'),
                   ),
                 ),
               ],

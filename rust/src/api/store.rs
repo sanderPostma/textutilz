@@ -33,6 +33,12 @@ pub struct DocRecord {
     pub created_day: i64,
     pub tab_order: i32,
     pub is_active: bool,
+    /// Rows the user has collapsed, as fold start rows. Stored as one text
+    /// column; see [`join_rows`].
+    pub collapsed_folds: Vec<u32>,
+    /// The format the user pinned this document to, or `None` to let detection
+    /// decide. Persisted as the language's stable id, empty for `None`.
+    pub language_override: Option<crate::api::structured::StructuredLanguage>,
 }
 
 /// Diesel row for the `documents` table. Booleans are stored as INTEGER; this
@@ -55,6 +61,8 @@ struct DocRow {
     created_day: i64,
     tab_order: i32,
     is_active: i32,
+    collapsed_folds: String,
+    language_override: String,
 }
 
 impl From<&DocRecord> for DocRow {
@@ -75,6 +83,11 @@ impl From<&DocRecord> for DocRow {
             created_day: r.created_day,
             tab_order: r.tab_order,
             is_active: r.is_active as i32,
+            collapsed_folds: join_rows(&r.collapsed_folds),
+            language_override: r
+                .language_override
+                .map(crate::api::structured::structured_language_id)
+                .unwrap_or_default(),
         }
     }
 }
@@ -97,8 +110,29 @@ impl From<DocRow> for DocRecord {
             created_day: r.created_day,
             tab_order: r.tab_order,
             is_active: r.is_active != 0,
+            collapsed_folds: split_rows(&r.collapsed_folds),
+            language_override: crate::api::structured::structured_language_from_id(
+                r.language_override,
+            ),
         }
     }
+}
+
+/// Row numbers as one comma-separated field. The schema has no list column and
+/// no JSON blob anywhere, and a set of small integers does not earn a table of
+/// its own — it is only ever read and written whole, with the document.
+fn join_rows(rows: &[u32]) -> String {
+    rows.iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The inverse. Anything unparseable is dropped rather than failing the load:
+/// a mangled fold list must not cost the user the whole session, and a missing
+/// collapse is invisible.
+fn split_rows(text: &str) -> Vec<u32> {
+    text.split(',').filter_map(|p| p.trim().parse().ok()).collect()
 }
 
 const CREATE_DOCUMENTS: &str = "CREATE TABLE IF NOT EXISTS documents (\
@@ -116,8 +150,49 @@ const CREATE_DOCUMENTS: &str = "CREATE TABLE IF NOT EXISTS documents (\
     scratch_content TEXT,\
     created_day BIGINT NOT NULL,\
     tab_order INTEGER NOT NULL,\
-    is_active INTEGER NOT NULL\
+    is_active INTEGER NOT NULL,\
+    collapsed_folds TEXT NOT NULL DEFAULT '',\
+    language_override TEXT NOT NULL DEFAULT ''\
 )";
+
+/// Create the tables if they are missing, then bring an existing database up
+/// to the current shape.
+///
+/// The second half is the part that is easy to forget. `CREATE TABLE IF NOT
+/// EXISTS` is a no-op on a database that already exists, so a column added to
+/// [`CREATE_DOCUMENTS`] never appears on anyone's existing store — and
+/// `load_session` then fails with "no such column", which Dart reports only as
+/// a debug print, silently costing the user every tab. **A column added to the
+/// DDL above must be added to the `ensure_column` list below in the same
+/// change.**
+fn init_schema(conn: &mut SqliteConnection) -> anyhow::Result<()> {
+    diesel::sql_query(CREATE_DOCUMENTS).execute(conn)?;
+    diesel::sql_query(CREATE_SETTINGS).execute(conn)?;
+    ensure_column(conn, "documents", "collapsed_folds", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(conn, "documents", "language_override", "TEXT NOT NULL DEFAULT ''")?;
+    Ok(())
+}
+
+/// Add a column unless it is already there.
+///
+/// SQLite has no `ADD COLUMN IF NOT EXISTS`, so the existing case is detected
+/// from the error it raises. That wording is part of SQLite's stable
+/// user-facing error set; the alternative, a `PRAGMA table_info` round trip,
+/// needs a `QueryableByName` struct in this file, which the frb generator would
+/// then try to mirror across the bridge as a wire type.
+fn ensure_column(
+    conn: &mut SqliteConnection,
+    table: &str,
+    column: &str,
+    decl: &str,
+) -> anyhow::Result<()> {
+    let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {decl}");
+    match diesel::sql_query(sql).execute(conn) {
+        Ok(_) => Ok(()),
+        Err(e) if e.to_string().contains("duplicate column name") => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
 
 const CREATE_SETTINGS: &str = "CREATE TABLE IF NOT EXISTS settings (\
     key TEXT PRIMARY KEY NOT NULL,\
@@ -141,9 +216,10 @@ impl AppStore {
     pub fn open() -> anyhow::Result<AppStore> {
         let path = crate::api::paths::db_path()?;
         let mut conn = SqliteConnection::establish(&path)?;
-        diesel::sql_query(CREATE_DOCUMENTS).execute(&mut conn)?;
-        diesel::sql_query(CREATE_SETTINGS).execute(&mut conn)?;
-        Ok(AppStore { conn: Mutex::new(conn) })
+        init_schema(&mut conn)?;
+        Ok(AppStore {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Exclusive access to the connection. Cheap because `&mut self` guarantees
@@ -215,6 +291,7 @@ impl AppStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::structured::StructuredLanguage;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -227,9 +304,192 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let mut conn = SqliteConnection::establish(&path).unwrap();
-        diesel::sql_query(CREATE_DOCUMENTS).execute(&mut conn).unwrap();
+        // The same path `open()` takes, so a schema change cannot pass the
+        // tests while breaking the real store.
+        init_schema(&mut conn).unwrap();
+        AppStore {
+            conn: Mutex::new(conn),
+        }
+    }
+
+    /// A temp DB path nobody else in this run will use.
+    fn temp_db() -> String {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        std::env::temp_dir()
+            .join(format!("textutilz_store_{}_{}.db", std::process::id(), n))
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// The `documents` table exactly as it shipped before `collapsed_folds`.
+    const CREATE_DOCUMENTS_V1: &str = "CREATE TABLE IF NOT EXISTS documents (\
+        id TEXT PRIMARY KEY NOT NULL,\
+        display_name TEXT NOT NULL,\
+        path TEXT NOT NULL,\
+        is_transient INTEGER NOT NULL,\
+        content_type TEXT NOT NULL,\
+        extension TEXT NOT NULL,\
+        auto_delete TEXT NOT NULL,\
+        view_mode TEXT NOT NULL,\
+        font_read DOUBLE NOT NULL,\
+        font_tail DOUBLE NOT NULL,\
+        font_edit DOUBLE NOT NULL,\
+        scratch_content TEXT,\
+        created_day BIGINT NOT NULL,\
+        tab_order INTEGER NOT NULL,\
+        is_active INTEGER NOT NULL\
+    )";
+
+    #[test]
+    fn collapsed_rows_survive_a_save_and_load() {
+        let mut s = store();
+        let mut d = rec("a", 0, "off", 0);
+        d.collapsed_folds = vec![1, 4, 90];
+        s.save_session(vec![d]).unwrap();
+        let back = s.load_session(0).unwrap();
+        assert_eq!(back[0].collapsed_folds, vec![1, 4, 90]);
+    }
+
+    #[test]
+    fn no_collapsed_rows_round_trips_as_empty_not_as_zero() {
+        // `"".split(',')` yields one empty piece, so a naive parse would read
+        // an unfolded document back as a collapse on row 0.
+        let mut s = store();
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        assert!(s.load_session(0).unwrap()[0].collapsed_folds.is_empty());
+    }
+
+    #[test]
+    fn a_database_from_before_the_column_still_loads() {
+        // The real upgrade path: `CREATE TABLE IF NOT EXISTS` will not touch
+        // this table, so without `ensure_column` every query naming
+        // `collapsed_folds` fails and the whole session is lost.
+        let path = temp_db();
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        diesel::sql_query(CREATE_DOCUMENTS_V1)
+            .execute(&mut conn)
+            .unwrap();
         diesel::sql_query(CREATE_SETTINGS).execute(&mut conn).unwrap();
-        AppStore { conn: Mutex::new(conn) }
+        drop(conn);
+
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        init_schema(&mut conn).unwrap();
+        let mut s = AppStore {
+            conn: Mutex::new(conn),
+        };
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        assert_eq!(s.load_session(0).unwrap().len(), 1);
+    }
+
+    /// The `documents` table as it shipped *with* `collapsed_folds` but before
+    /// `language_override` — i.e. what is on disk for anyone running the
+    /// current build. `CREATE_DOCUMENTS_V1` proves the first upgrade still
+    /// works; this proves the second one does, from the state users are
+    /// actually in.
+    const CREATE_DOCUMENTS_V2: &str = "CREATE TABLE IF NOT EXISTS documents (\
+        id TEXT PRIMARY KEY NOT NULL,\
+        display_name TEXT NOT NULL,\
+        path TEXT NOT NULL,\
+        is_transient INTEGER NOT NULL,\
+        content_type TEXT NOT NULL,\
+        extension TEXT NOT NULL,\
+        auto_delete TEXT NOT NULL,\
+        view_mode TEXT NOT NULL,\
+        font_read DOUBLE NOT NULL,\
+        font_tail DOUBLE NOT NULL,\
+        font_edit DOUBLE NOT NULL,\
+        scratch_content TEXT,\
+        created_day BIGINT NOT NULL,\
+        tab_order INTEGER NOT NULL,\
+        is_active INTEGER NOT NULL,\
+        collapsed_folds TEXT NOT NULL DEFAULT ''\
+    )";
+
+    #[test]
+    fn a_database_from_before_the_language_column_still_loads() {
+        let path = temp_db();
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        diesel::sql_query(CREATE_DOCUMENTS_V2)
+            .execute(&mut conn)
+            .unwrap();
+        diesel::sql_query(CREATE_SETTINGS).execute(&mut conn).unwrap();
+        drop(conn);
+
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        init_schema(&mut conn).unwrap();
+        let mut s = AppStore {
+            conn: Mutex::new(conn),
+        };
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        let back = s.load_session(0).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].language_override, None);
+    }
+
+    #[test]
+    fn a_pinned_language_survives_a_save_and_load() {
+        let mut s = store();
+        let mut d = rec("a", 0, "off", 0);
+        d.language_override = Some(StructuredLanguage::Json5);
+        s.save_session(vec![d]).unwrap();
+        assert_eq!(
+            s.load_session(0).unwrap()[0].language_override,
+            Some(StructuredLanguage::Json5)
+        );
+    }
+
+    #[test]
+    fn pinning_plain_text_round_trips_as_a_pin_not_as_no_pin() {
+        // The empty string means "no pin", so plain text needs an id of its own
+        // — otherwise "stop colouring this document" would not survive a
+        // restart, which is exactly when the user would notice.
+        let mut s = store();
+        let mut d = rec("a", 0, "off", 0);
+        d.language_override = Some(StructuredLanguage::PlainText);
+        s.save_session(vec![d]).unwrap();
+        assert_eq!(
+            s.load_session(0).unwrap()[0].language_override,
+            Some(StructuredLanguage::PlainText)
+        );
+    }
+
+    #[test]
+    fn no_pin_round_trips_as_none() {
+        let mut s = store();
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        assert_eq!(s.load_session(0).unwrap()[0].language_override, None);
+    }
+
+    #[test]
+    fn a_language_id_this_build_does_not_know_falls_back_to_detection() {
+        // Written by a newer build, or corrupted. Dropping to automatic
+        // detection costs the user a preference; failing the load costs them
+        // every tab.
+        let mut s = store();
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        {
+            let mut conn = s.conn.lock().unwrap();
+            diesel::sql_query("UPDATE documents SET language_override = 'toml'")
+                .execute(&mut *conn)
+                .unwrap();
+        }
+        assert_eq!(s.load_session(0).unwrap()[0].language_override, None);
+    }
+
+    #[test]
+    fn opening_an_up_to_date_database_again_is_a_no_op() {
+        let path = temp_db();
+        for _ in 0..3 {
+            let mut conn = SqliteConnection::establish(&path).unwrap();
+            init_schema(&mut conn).unwrap();
+        }
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        init_schema(&mut conn).unwrap();
+        let mut s = AppStore {
+            conn: Mutex::new(conn),
+        };
+        s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        assert_eq!(s.load_session(0).unwrap().len(), 1);
     }
 
     fn rec(id: &str, order: i32, auto: &str, created_day: i64) -> DocRecord {
@@ -245,10 +505,16 @@ mod tests {
             font_read: 14.0,
             font_tail: 14.0,
             font_edit: 16.0,
-            scratch_content: if auto == "off" { None } else { Some(format!("body {id}")) },
+            scratch_content: if auto == "off" {
+                None
+            } else {
+                Some(format!("body {id}"))
+            },
             created_day,
             tab_order: order,
             is_active: order == 0,
+            collapsed_folds: Vec::new(),
+            language_override: None,
         }
     }
 

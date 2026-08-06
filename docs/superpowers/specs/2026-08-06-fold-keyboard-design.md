@@ -51,8 +51,13 @@ region.
   them again with their own state intact, because `FoldMap` merges overlapping
   hidden ranges and a collapsed region nested inside another contributes nothing
   new.
-- **Collapse / expand at caret** — the innermost region whose
-  `[start_row, end_row]` contains the caret row. No enclosing region is a no-op.
+- **Collapse at caret** — the innermost *open* region whose
+  `[start_row, end_row]` contains the caret row. Skipping regions that are
+  already closed is what makes repeated presses walk outwards: close the inner
+  object, the caret lands on its header, press again and the object around it
+  closes. Nothing open around the caret is a no-op.
+- **Expand at caret** — the mirror: the innermost *collapsed* region containing
+  the caret row, so repeated presses walk inwards.
 
 A caret left hidden by a collapse is moved to the nearest visible row above, as
 `toggleFoldAt` already does today.
@@ -167,12 +172,17 @@ Dart, through the `GlobalKey<CustomEditorState>` harness that
 - `unfoldLevel(N)` leaves a deeper collapsed region collapsed when its parent is
   re-collapsed and expanded again.
 - `collapseAtCursor` with the caret inside the inner object collapses the inner
-  region, not the outer one; with the caret outside every region it is a no-op.
+  region, not the outer one; pressed again it takes the outer one; pressed a
+  third time it is a no-op. With no region around the caret it is a no-op.
 - The document text is unchanged after all of the above.
 
-Widget tests must do the `EditSession` setup inside `tester.runAsync` — awaiting
-a Rust FFI call directly in a `testWidgets` body hangs forever under `FakeAsync`
-(`TODO.md` §6).
+No `tester.runAsync` is needed: `EditSession.open` and `markupAnalysis` are
+`#[frb(sync)]`, so they do not hit the `FakeAsync` hazard in `TODO.md` §6.
+
+The key dispatch itself is **not** covered. `_handleGlobalShortcut` and the
+editor's bubble guard both live in state classes with no test harness — the
+same gap `TODO.md` §1 already records for three other behaviours. Verifying that
+`Alt+0` reaches `foldAll` is a manual check.
 
 ## Out of scope
 

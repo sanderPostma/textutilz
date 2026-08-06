@@ -5,8 +5,9 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'structured.dart';
 
-// These functions are ignored because they are not marked as `pub`: `c`
+// These functions are ignored because they are not marked as `pub`: `c`, `ensure_column`, `init_schema`, `join_rows`, `split_rows`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DocRow`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
 
@@ -55,6 +56,14 @@ class DocRecord {
   final int tabOrder;
   final bool isActive;
 
+  /// Rows the user has collapsed, as fold start rows. Stored as one text
+  /// column; see [`join_rows`].
+  final Uint32List collapsedFolds;
+
+  /// The format the user pinned this document to, or `None` to let detection
+  /// decide. Persisted as the language's stable id, empty for `None`.
+  final StructuredLanguage? languageOverride;
+
   const DocRecord({
     required this.id,
     required this.displayName,
@@ -71,6 +80,8 @@ class DocRecord {
     required this.createdDay,
     required this.tabOrder,
     required this.isActive,
+    required this.collapsedFolds,
+    this.languageOverride,
   });
 
   @override
@@ -89,7 +100,9 @@ class DocRecord {
       scratchContent.hashCode ^
       createdDay.hashCode ^
       tabOrder.hashCode ^
-      isActive.hashCode;
+      isActive.hashCode ^
+      collapsedFolds.hashCode ^
+      languageOverride.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -110,5 +123,7 @@ class DocRecord {
           scratchContent == other.scratchContent &&
           createdDay == other.createdDay &&
           tabOrder == other.tabOrder &&
-          isActive == other.isActive;
+          isActive == other.isActive &&
+          collapsedFolds == other.collapsedFolds &&
+          languageOverride == other.languageOverride;
 }

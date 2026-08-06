@@ -6,9 +6,10 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'search.dart';
+import 'structured.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `new`, `prepare_edit`, `record`, `reset_after_save`, `scope_row_bounds`, `span_in_scope`, `u16_len`, `u16_to_byte`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Op`, `UndoEntry`
+// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `markup_checkpoints`, `markup_rows`, `new`, `prepare_edit`, `record`, `reset_after_save`, `scope_row_bounds`, `span_in_scope`, `u16_len`, `u16_to_byte`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MarkupCache`, `Op`, `UndoEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<EditSession>>
@@ -54,6 +55,19 @@ abstract class EditSession implements RustOpaqueInterface {
     required BigInt ecol,
   });
 
+  /// The document's effective format.
+  ///
+  /// A user-pinned `language_override` wins outright; otherwise the format is
+  /// detected, sniffing the opening rows when the extension and content type
+  /// say nothing useful. The precedence lives here rather than at the call
+  /// site so that everything asking "what is this document?" — colouring,
+  /// folding, validation, the Tools menu, the status bar — gets one answer.
+  StructuredLanguage detectMarkupLanguage({
+    required String extension_,
+    required String contentType,
+    StructuredLanguage? languageOverride,
+  });
+
   /// Finalize the current group.
   void endGroup();
 
@@ -77,6 +91,11 @@ abstract class EditSession implements RustOpaqueInterface {
     SpanScope? scope,
   });
 
+  /// True when the file at this session's path no longer matches the
+  /// version used to build the base line index. Detection stays in Rust so
+  /// callers never need to duplicate filesystem identity/mtime logic.
+  bool hasExternalChanges();
+
   CaretPos insert({
     required BigInt row,
     required BigInt col,
@@ -88,6 +107,31 @@ abstract class EditSession implements RustOpaqueInterface {
   String line({required BigInt vrow});
 
   BigInt lineCount();
+
+  /// Fold regions, bracket pairs and diagnostics for the whole document.
+  StructuredAnalysis markupAnalysis({required StructuredLanguage language});
+
+  /// The delimiter pair the caret is on or inside, if any.
+  ///
+  /// Reads from the cached analysis, so dragging the caret through a large
+  /// document does not re-lex it on every keystroke.
+  StructuredPair? markupPairAt({
+    required StructuredLanguage language,
+    required BigInt row,
+    required BigInt col,
+  });
+
+  /// Syntax tokens for the rows in `[from_row, to_row)`.
+  ///
+  /// Only the requested rows are lexed. The state they start in comes from
+  /// the nearest stored checkpoint, warmed forward by at most
+  /// `CHECKPOINT_ROWS` rows — so scrolling to the middle of a large document
+  /// costs the same as scrolling to the top of it.
+  List<StructuredRowTokens> markupTokens({
+    required StructuredLanguage language,
+    required BigInt fromRow,
+    required BigInt toRow,
+  });
 
   static EditSession open({required String path}) =>
       RustLib.instance.api.crateApiEditSessionEditSessionOpen(path: path);

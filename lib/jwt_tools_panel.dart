@@ -23,16 +23,19 @@ class JwtToolView extends StatefulWidget {
 }
 
 class _JwtToolViewState extends State<JwtToolView> {
-  final GlobalKey<CustomEditorState> _encodedKey = GlobalKey<CustomEditorState>();
-  final GlobalKey<CustomEditorState> _headerKey = GlobalKey<CustomEditorState>();
-  final GlobalKey<CustomEditorState> _payloadKey = GlobalKey<CustomEditorState>();
+  final GlobalKey<CustomEditorState> _encodedKey =
+      GlobalKey<CustomEditorState>();
+  final GlobalKey<CustomEditorState> _headerKey =
+      GlobalKey<CustomEditorState>();
+  final GlobalKey<CustomEditorState> _payloadKey =
+      GlobalKey<CustomEditorState>();
 
   EditSession? _encodedSession;
   EditSession? _headerSession;
   EditSession? _payloadSession;
 
   final TextEditingController _secretController = TextEditingController();
-  
+
   bool _isInitialized = false;
   bool _isValid = false;
   String? _errorMsg;
@@ -49,10 +52,19 @@ class _JwtToolViewState extends State<JwtToolView> {
     try {
       final scratchDir = rust_paths.scratchDir();
       final t = DateTime.now().millisecondsSinceEpoch;
-      
-      _encodedSession = EditSession.createScratch(path: '$scratchDir/jwt_enc_$t.txt', content: widget.initialEncoded);
-      _headerSession = EditSession.createScratch(path: '$scratchDir/jwt_hdr_$t.json', content: '{}');
-      _payloadSession = EditSession.createScratch(path: '$scratchDir/jwt_pay_$t.json', content: '{}');
+
+      _encodedSession = EditSession.createScratch(
+        path: '$scratchDir/jwt_enc_$t.txt',
+        content: widget.initialEncoded,
+      );
+      _headerSession = EditSession.createScratch(
+        path: '$scratchDir/jwt_hdr_$t.json',
+        content: '{}',
+      );
+      _payloadSession = EditSession.createScratch(
+        path: '$scratchDir/jwt_pay_$t.json',
+        content: '{}',
+      );
 
       if (widget.initialEncoded.isNotEmpty) {
         _syncFromEncoded();
@@ -76,16 +88,19 @@ class _JwtToolViewState extends State<JwtToolView> {
   Future<void> _syncFromEncoded() async {
     if (_isSyncing) return;
     _isSyncing = true;
-    
+
     try {
       final token = _encodedSession!.contentString();
       final secret = _secretController.text;
-      
-      final result = rust_jwt.decodeJwt(token: token, secret: secret.isEmpty ? null : secret);
-      
+
+      final result = rust_jwt.decodeJwt(
+        token: token,
+        secret: secret.isEmpty ? null : secret,
+      );
+
       String headerText = result.header;
       String payloadText = result.payload;
-      
+
       // If it's completely malformed, or the base64 decoder fell back to "{}", clear the boxes.
       if (result.error != null && result.error!.contains("format")) {
         headerText = "";
@@ -96,17 +111,25 @@ class _JwtToolViewState extends State<JwtToolView> {
       }
 
       if (_headerKey.currentState != null) {
-        _headerKey.currentState!.replaceAll(headerText, requestFocus: false, ignoreReadOnly: true);
+        _headerKey.currentState!.replaceAll(
+          headerText,
+          requestFocus: false,
+          ignoreReadOnly: true,
+        );
       } else {
         _headerSession!.replaceAll(text: headerText);
       }
 
       if (_payloadKey.currentState != null) {
-        _payloadKey.currentState!.replaceAll(payloadText, requestFocus: false, ignoreReadOnly: true);
+        _payloadKey.currentState!.replaceAll(
+          payloadText,
+          requestFocus: false,
+          ignoreReadOnly: true,
+        );
       } else {
         _payloadSession!.replaceAll(text: payloadText);
       }
-      
+
       setState(() {
         _isValid = result.isValid;
         _errorMsg = result.error;
@@ -124,12 +147,12 @@ class _JwtToolViewState extends State<JwtToolView> {
   Future<void> _syncFromDecoded() async {
     if (_isSyncing) return;
     _isSyncing = true;
-    
+
     try {
       final header = _headerSession!.contentString();
       final payload = _payloadSession!.contentString();
       final secret = _secretController.text;
-      
+
       if (secret.isEmpty) {
         setState(() {
           _errorMsg = "Secret required for signing";
@@ -138,26 +161,38 @@ class _JwtToolViewState extends State<JwtToolView> {
         _isSyncing = false;
         return;
       }
-      
-      final token = rust_jwt.encodeJwt(header: header, payload: payload, secret: secret);
-      
+
+      final token = rust_jwt.encodeJwt(
+        header: header,
+        payload: payload,
+        secret: secret,
+      );
+
       if (_encodedKey.currentState != null) {
-        _encodedKey.currentState!.replaceAll(token, requestFocus: false, ignoreReadOnly: true);
+        _encodedKey.currentState!.replaceAll(
+          token,
+          requestFocus: false,
+          ignoreReadOnly: true,
+        );
       } else {
         _encodedSession!.replaceAll(text: token);
       }
-      
+
       setState(() {
         _isValid = true;
         _errorMsg = null;
       });
     } catch (e) {
       if (_encodedKey.currentState != null) {
-        _encodedKey.currentState!.replaceAll("", requestFocus: false, ignoreReadOnly: true);
+        _encodedKey.currentState!.replaceAll(
+          "",
+          requestFocus: false,
+          ignoreReadOnly: true,
+        );
       } else {
         _encodedSession!.replaceAll(text: "");
       }
-      
+
       setState(() {
         _isValid = false;
         _errorMsg = e.toString();
@@ -239,7 +274,11 @@ class _JwtToolViewState extends State<JwtToolView> {
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF5F5F5),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _isValid ? Colors.green : (secretEmpty() ? scheme.outlineVariant : Colors.red)),
+              border: Border.all(
+                color: _isValid
+                    ? Colors.green
+                    : (secretEmpty() ? scheme.outlineVariant : Colors.red),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,10 +286,21 @@ class _JwtToolViewState extends State<JwtToolView> {
               children: [
                 Row(
                   children: [
-                    Text("VERIFY SIGNATURE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: scheme.primary)),
+                    Text(
+                      "VERIFY SIGNATURE",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: scheme.primary,
+                      ),
+                    ),
                     const Spacer(),
                     if (_isValid)
-                      const Icon(Icons.check_circle, color: Colors.green, size: 16)
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 16,
+                      )
                     else if (!secretEmpty())
                       const Icon(Icons.error, color: Colors.red, size: 16),
                   ],
@@ -270,7 +320,10 @@ class _JwtToolViewState extends State<JwtToolView> {
                 ),
                 if (_errorMsg != null) ...[
                   const SizedBox(height: 8),
-                  Text(_errorMsg!, style: const TextStyle(color: Colors.red, fontSize: 11)),
+                  Text(
+                    _errorMsg!,
+                    style: const TextStyle(color: Colors.red, fontSize: 11),
+                  ),
                 ],
               ],
             ),
@@ -319,8 +372,14 @@ class _JwtToolViewState extends State<JwtToolView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
         ],
       ),
     );
@@ -338,7 +397,7 @@ class _JwtToolViewState extends State<JwtToolView> {
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final headerColor = borderColor.withOpacity(isDark ? 0.2 : 0.1);
-    
+
     return Container(
       margin: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -356,13 +415,25 @@ class _JwtToolViewState extends State<JwtToolView> {
             ),
             child: Row(
               children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Theme.of(context).colorScheme.onSurface)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
                 const Spacer(),
                 InkWell(
                   onTap: () {
                     final text = session.contentString();
                     Clipboard.setData(ClipboardData(text: text));
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied $title'), duration: const Duration(seconds: 1)));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Copied $title'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
                   },
                   child: const Padding(
                     padding: EdgeInsets.all(2.0),

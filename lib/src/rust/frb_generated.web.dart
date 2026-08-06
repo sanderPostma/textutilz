@@ -16,9 +16,11 @@ import 'api/mime_tools.dart';
 import 'api/paths.dart';
 import 'api/search.dart';
 import 'api/store.dart';
+import 'api/structured.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
+import 'markup/language.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -154,6 +156,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CommandRegistry dco_decode_box_autoadd_command_registry(dynamic raw);
 
   @protected
+  CommentStyle dco_decode_box_autoadd_comment_style(dynamic raw);
+
+  @protected
   MatchSpan dco_decode_box_autoadd_match_span(dynamic raw);
 
   @protected
@@ -163,10 +168,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SpanScope dco_decode_box_autoadd_span_scope(dynamic raw);
 
   @protected
+  StructuredLanguage dco_decode_box_autoadd_structured_language(dynamic raw);
+
+  @protected
+  StructuredPair dco_decode_box_autoadd_structured_pair(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_usize(dynamic raw);
 
   @protected
   ByteRange dco_decode_byte_range(dynamic raw);
+
+  @protected
+  ByteSearchResult dco_decode_byte_search_result(dynamic raw);
 
   @protected
   CaretPos dco_decode_caret_pos(dynamic raw);
@@ -176,6 +190,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CommandRegistry dco_decode_command_registry(dynamic raw);
+
+  @protected
+  CommentStyle dco_decode_comment_style(dynamic raw);
 
   @protected
   DocRecord dco_decode_doc_record(dynamic raw);
@@ -217,6 +234,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MatchSpan> dco_decode_list_match_span(dynamic raw);
 
   @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -224,6 +244,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint64List dco_decode_list_prim_usize_strict(dynamic raw);
+
+  @protected
+  List<StructuredDiagnostic> dco_decode_list_structured_diagnostic(dynamic raw);
+
+  @protected
+  List<StructuredFold> dco_decode_list_structured_fold(dynamic raw);
+
+  @protected
+  List<StructuredLanguage> dco_decode_list_structured_language(dynamic raw);
+
+  @protected
+  List<StructuredPair> dco_decode_list_structured_pair(dynamic raw);
+
+  @protected
+  List<StructuredRowTokens> dco_decode_list_structured_row_tokens(dynamic raw);
+
+  @protected
+  List<StructuredToken> dco_decode_list_structured_token(dynamic raw);
 
   @protected
   MatchSpan dco_decode_match_span(dynamic raw);
@@ -241,6 +279,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SpanScope? dco_decode_opt_box_autoadd_span_scope(dynamic raw);
 
   @protected
+  StructuredLanguage? dco_decode_opt_box_autoadd_structured_language(
+    dynamic raw,
+  );
+
+  @protected
+  StructuredPair? dco_decode_opt_box_autoadd_structured_pair(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_usize(dynamic raw);
 
   @protected
@@ -251,6 +297,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpanScope dco_decode_span_scope(dynamic raw);
+
+  @protected
+  StructuredAnalysis dco_decode_structured_analysis(dynamic raw);
+
+  @protected
+  StructuredCommentStyle dco_decode_structured_comment_style(dynamic raw);
+
+  @protected
+  StructuredDiagnostic dco_decode_structured_diagnostic(dynamic raw);
+
+  @protected
+  StructuredFold dco_decode_structured_fold(dynamic raw);
+
+  @protected
+  StructuredFoldKind dco_decode_structured_fold_kind(dynamic raw);
+
+  @protected
+  StructuredLanguage dco_decode_structured_language(dynamic raw);
+
+  @protected
+  StructuredPair dco_decode_structured_pair(dynamic raw);
+
+  @protected
+  StructuredRowTokens dco_decode_structured_row_tokens(dynamic raw);
+
+  @protected
+  StructuredSeverity dco_decode_structured_severity(dynamic raw);
+
+  @protected
+  StructuredToken dco_decode_structured_token(dynamic raw);
+
+  @protected
+  StructuredTokenKind dco_decode_structured_token_kind(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -375,6 +457,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  CommentStyle sse_decode_box_autoadd_comment_style(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MatchSpan sse_decode_box_autoadd_match_span(SseDeserializer deserializer);
 
   @protected
@@ -384,10 +471,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SpanScope sse_decode_box_autoadd_span_scope(SseDeserializer deserializer);
 
   @protected
+  StructuredLanguage sse_decode_box_autoadd_structured_language(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredPair sse_decode_box_autoadd_structured_pair(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt sse_decode_box_autoadd_usize(SseDeserializer deserializer);
 
   @protected
   ByteRange sse_decode_byte_range(SseDeserializer deserializer);
+
+  @protected
+  ByteSearchResult sse_decode_byte_search_result(SseDeserializer deserializer);
 
   @protected
   CaretPos sse_decode_caret_pos(SseDeserializer deserializer);
@@ -397,6 +497,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CommandRegistry sse_decode_command_registry(SseDeserializer deserializer);
+
+  @protected
+  CommentStyle sse_decode_comment_style(SseDeserializer deserializer);
 
   @protected
   DocRecord sse_decode_doc_record(SseDeserializer deserializer);
@@ -440,6 +543,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MatchSpan> sse_decode_list_match_span(SseDeserializer deserializer);
 
   @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -447,6 +553,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint64List sse_decode_list_prim_usize_strict(SseDeserializer deserializer);
+
+  @protected
+  List<StructuredDiagnostic> sse_decode_list_structured_diagnostic(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StructuredFold> sse_decode_list_structured_fold(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StructuredLanguage> sse_decode_list_structured_language(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StructuredPair> sse_decode_list_structured_pair(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StructuredRowTokens> sse_decode_list_structured_row_tokens(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StructuredToken> sse_decode_list_structured_token(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MatchSpan sse_decode_match_span(SseDeserializer deserializer);
@@ -466,6 +602,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  StructuredLanguage? sse_decode_opt_box_autoadd_structured_language(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredPair? sse_decode_opt_box_autoadd_structured_pair(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_usize(SseDeserializer deserializer);
 
   @protected
@@ -476,6 +622,58 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpanScope sse_decode_span_scope(SseDeserializer deserializer);
+
+  @protected
+  StructuredAnalysis sse_decode_structured_analysis(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredCommentStyle sse_decode_structured_comment_style(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredDiagnostic sse_decode_structured_diagnostic(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredFold sse_decode_structured_fold(SseDeserializer deserializer);
+
+  @protected
+  StructuredFoldKind sse_decode_structured_fold_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredLanguage sse_decode_structured_language(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredPair sse_decode_structured_pair(SseDeserializer deserializer);
+
+  @protected
+  StructuredRowTokens sse_decode_structured_row_tokens(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredSeverity sse_decode_structured_severity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredToken sse_decode_structured_token(SseDeserializer deserializer);
+
+  @protected
+  StructuredTokenKind sse_decode_structured_token_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -622,6 +820,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_comment_style(
+    CommentStyle self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_match_span(
     MatchSpan self,
     SseSerializer serializer,
@@ -640,10 +844,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_structured_language(
+    StructuredLanguage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_structured_pair(
+    StructuredPair self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_usize(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_byte_range(ByteRange self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_byte_search_result(
+    ByteSearchResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_caret_pos(CaretPos self, SseSerializer serializer);
@@ -659,6 +881,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     CommandRegistry self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_comment_style(CommentStyle self, SseSerializer serializer);
 
   @protected
   void sse_encode_doc_record(DocRecord self, SseSerializer serializer);
@@ -715,6 +940,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -726,6 +957,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_usize_strict(
     Uint64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_diagnostic(
+    List<StructuredDiagnostic> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_fold(
+    List<StructuredFold> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_language(
+    List<StructuredLanguage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_pair(
+    List<StructuredPair> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_row_tokens(
+    List<StructuredRowTokens> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_structured_token(
+    List<StructuredToken> self,
     SseSerializer serializer,
   );
 
@@ -751,6 +1018,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_structured_language(
+    StructuredLanguage? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_structured_pair(
+    StructuredPair? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_usize(BigInt? self, SseSerializer serializer);
 
   @protected
@@ -761,6 +1040,75 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_span_scope(SpanScope self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_structured_analysis(
+    StructuredAnalysis self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_comment_style(
+    StructuredCommentStyle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_diagnostic(
+    StructuredDiagnostic self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_fold(
+    StructuredFold self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_fold_kind(
+    StructuredFoldKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_language(
+    StructuredLanguage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_pair(
+    StructuredPair self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_row_tokens(
+    StructuredRowTokens self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_severity(
+    StructuredSeverity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_token(
+    StructuredToken self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_token_kind(
+    StructuredTokenKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

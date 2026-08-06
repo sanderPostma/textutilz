@@ -64,25 +64,25 @@ class DockedBar extends StatelessWidget {
   /// `onSecondaryContainer` is the contrast-correct text colour Material
   /// pairs with it.
   Widget _titleBand(ColorScheme scheme, String text) => Container(
-        width: double.infinity,
-        color: scheme.secondaryContainer,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-            color: scheme.onSecondaryContainer,
-          ),
-        ),
-      );
+    width: double.infinity,
+    color: scheme.secondaryContainer,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.3,
+        color: scheme.onSecondaryContainer,
+      ),
+    ),
+  );
 
   Widget _closeButton() => IconButton(
-        icon: const Icon(Icons.close, size: 18),
-        tooltip: 'Close (Esc)',
-        onPressed: onClose,
-        visualDensity: VisualDensity.compact,
-      );
+    icon: const Icon(Icons.close, size: 18),
+    tooltip: 'Close (Esc)',
+    onPressed: onClose,
+    visualDensity: VisualDensity.compact,
+  );
 }

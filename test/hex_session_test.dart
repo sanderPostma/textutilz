@@ -14,7 +14,8 @@ void main() {
 
   File tempWith(List<int> bytes) {
     final f = File(
-        '${Directory.systemTemp.path}/textutilz_hex_dart_${DateTime.now().microsecondsSinceEpoch}.bin');
+      '${Directory.systemTemp.path}/textutilz_hex_dart_${DateTime.now().microsecondsSinceEpoch}.bin',
+    );
     f.writeAsBytesSync(bytes);
     return f;
   }
@@ -25,8 +26,9 @@ void main() {
 
     expect(s.len().toInt(), 11);
     expect(
-        s.readWindow(offset: BigInt.zero, len: BigInt.from(11)),
-        Uint8List.fromList('hello world'.codeUnits));
+      s.readWindow(offset: BigInt.zero, len: BigInt.from(11)),
+      Uint8List.fromList('hello world'.codeUnits),
+    );
 
     // Overwrite 'h' -> 'H' (what the hex/char panels do on a keystroke).
     s.overwriteBytes(offset: BigInt.zero, bytes: [0x48]);
@@ -35,8 +37,10 @@ void main() {
     // Delete a byte.
     s.delete(offset: BigInt.from(1), len: BigInt.one);
 
-    final out =
-        s.readWindow(offset: BigInt.zero, len: BigInt.from(s.len().toInt()));
+    final out = s.readWindow(
+      offset: BigInt.zero,
+      len: BigInt.from(s.len().toInt()),
+    );
     expect(String.fromCharCodes(out), 'Hllo world!');
 
     f.deleteSync();
@@ -51,14 +55,18 @@ void main() {
     final caret = s.undo();
     expect(caret, isNotNull);
     expect(
-        String.fromCharCodes(
-            s.readWindow(offset: BigInt.zero, len: BigInt.from(3))),
-        'abc');
+      String.fromCharCodes(
+        s.readWindow(offset: BigInt.zero, len: BigInt.from(3)),
+      ),
+      'abc',
+    );
     s.redo();
     expect(
-        String.fromCharCodes(
-            s.readWindow(offset: BigInt.zero, len: BigInt.from(3))),
-        'Xbc');
+      String.fromCharCodes(
+        s.readWindow(offset: BigInt.zero, len: BigInt.from(3)),
+      ),
+      'Xbc',
+    );
 
     f.deleteSync();
   });

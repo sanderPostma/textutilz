@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:textutilz/src/rust/api/hex_session.dart';
+
+import 'hex_find_state.dart';
 
 /// Radix used to render the offset gutter and the byte cells.
 enum HexRadix { hex, dec }
@@ -16,10 +17,10 @@ enum HexCharEncoding { latin1, utf8, utf16 }
 
 extension HexCharEncodingLabel on HexCharEncoding {
   String get label => switch (this) {
-        HexCharEncoding.latin1 => 'Latin-1',
-        HexCharEncoding.utf8 => 'UTF-8',
-        HexCharEncoding.utf16 => 'UTF-16',
-      };
+    HexCharEncoding.latin1 => 'Latin-1',
+    HexCharEncoding.utf8 => 'UTF-8',
+    HexCharEncoding.utf16 => 'UTF-16',
+  };
 }
 
 /// Immutable view settings for a [HexEditorView]. Kept as a plain value object
@@ -50,15 +51,14 @@ class HexViewSettings {
     HexCharEncoding? charEncoding,
     bool? insertMode,
     double? fontSize,
-  }) =>
-      HexViewSettings(
-        bytesPerRow: bytesPerRow ?? this.bytesPerRow,
-        offsetRadix: offsetRadix ?? this.offsetRadix,
-        byteRadix: byteRadix ?? this.byteRadix,
-        charEncoding: charEncoding ?? this.charEncoding,
-        insertMode: insertMode ?? this.insertMode,
-        fontSize: fontSize ?? this.fontSize,
-      );
+  }) => HexViewSettings(
+    bytesPerRow: bytesPerRow ?? this.bytesPerRow,
+    offsetRadix: offsetRadix ?? this.offsetRadix,
+    byteRadix: byteRadix ?? this.byteRadix,
+    charEncoding: charEncoding ?? this.charEncoding,
+    insertMode: insertMode ?? this.insertMode,
+    fontSize: fontSize ?? this.fontSize,
+  );
 }
 
 /// A self-contained, reusable hex editor over a Rust [HexSession]. Holds only
@@ -87,6 +87,11 @@ class HexEditorView extends StatefulWidget {
   /// Ctrl+wheel font zoom.
   final ValueChanged<double>? onFontSizeChanged;
 
+  /// Byte ranges found by the hex search panel. These are painted in both the
+  /// numeric and character regions; [currentMatch] gets the stronger accent.
+  final List<HexMatch> matches;
+  final HexMatch? currentMatch;
+
   const HexEditorView({
     super.key,
     required this.session,
@@ -95,13 +100,15 @@ class HexEditorView extends StatefulWidget {
     this.onCursorChanged,
     this.onContentChanged,
     this.onFontSizeChanged,
+    this.matches = const [],
+    this.currentMatch,
   });
 
   @override
-  State<HexEditorView> createState() => _HexEditorViewState();
+  State<HexEditorView> createState() => HexEditorViewState();
 }
 
-class _HexEditorViewState extends State<HexEditorView> {
+class HexEditorViewState extends State<HexEditorView> {
   // App-level shortcuts the editor lets bubble up instead of handling.
   static final Set<LogicalKeyboardKey> _bubbleShortcutKeys = {
     LogicalKeyboardKey.keyS,
@@ -143,8 +150,7 @@ class _HexEditorViewState extends State<HexEditorView> {
   @override
   void didUpdateWidget(HexEditorView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.settings != oldWidget.settings &&
-        widget.settings != _settings) {
+    if (widget.settings != oldWidget.settings && widget.settings != _settings) {
       _settings = widget.settings;
     }
   }
@@ -201,8 +207,7 @@ class _HexEditorViewState extends State<HexEditorView> {
 
   double get _gutterW => (_addressDigits + 2) * _charW;
 
-  double _hexCellX(int k) =>
-      _gutterW + k * _cellW + (k ~/ 8) * _groupGap;
+  double _hexCellX(int k) => _gutterW + k * _cellW + (k ~/ 8) * _groupGap;
 
   double get _charStartX => _hexCellX(_bpr - 1) + _cellW + _sepW;
 
@@ -254,6 +259,14 @@ class _HexEditorViewState extends State<HexEditorView> {
     _notifyCursor();
   }
 
+  /// Select the first byte of a search result and reveal its row.
+  void revealMatch(HexMatch match) {
+    _moveCaret(match.offset);
+    _focusNode.requestFocus();
+  }
+
+  void focusEditor() => _focusNode.requestFocus();
+
   // ---- editing -------------------------------------------------------------
 
   int? _hexDigit(String s) {
@@ -273,7 +286,10 @@ class _HexEditorViewState extends State<HexEditorView> {
           _nibble = 1; // low nibble of the byte just inserted
         } else {
           final b = _byteAt(_caret) ?? 0;
-          _s.overwriteBytes(offset: BigInt.from(_caret), bytes: [(b & 0xF0) | d]);
+          _s.overwriteBytes(
+            offset: BigInt.from(_caret),
+            bytes: [(b & 0xF0) | d],
+          );
           _caret += 1;
           _nibble = 0;
           _endByteGroup();
@@ -283,11 +299,15 @@ class _HexEditorViewState extends State<HexEditorView> {
         if (_nibble == 0) {
           _beginByteGroup();
           _s.overwriteBytes(
-              offset: BigInt.from(_caret), bytes: [(d << 4) | (b & 0x0F)]);
+            offset: BigInt.from(_caret),
+            bytes: [(d << 4) | (b & 0x0F)],
+          );
           _nibble = 1;
         } else {
           _s.overwriteBytes(
-              offset: BigInt.from(_caret), bytes: [(b & 0xF0) | d]);
+            offset: BigInt.from(_caret),
+            bytes: [(b & 0xF0) | d],
+          );
           _caret += 1;
           _nibble = 0;
           _endByteGroup();
@@ -408,7 +428,8 @@ class _HexEditorViewState extends State<HexEditorView> {
     final ctrl = HardwareKeyboard.instance.isControlPressed;
 
     // Bubble Alt+X (menu) and app shortcuts.
-    if (HardwareKeyboard.instance.isAltPressed && key == LogicalKeyboardKey.keyX) {
+    if (HardwareKeyboard.instance.isAltPressed &&
+        key == LogicalKeyboardKey.keyX) {
       return KeyEventResult.ignored;
     }
     if (ctrl && _bubbleShortcutKeys.contains(key)) {
@@ -616,8 +637,7 @@ class _HexEditorViewState extends State<HexEditorView> {
 
               // Visible row window.
               final scrollY = _vScroll.hasClients ? _vScroll.offset : 0.0;
-              final firstRow =
-                  (scrollY / _rowH).floor().clamp(0, _rowCount);
+              final firstRow = (scrollY / _rowH).floor().clamp(0, _rowCount);
               final visRows = (constraints.maxHeight / _rowH).ceil() + 1;
               final lastRow = (firstRow + visRows).clamp(0, _rowCount);
 
@@ -628,13 +648,15 @@ class _HexEditorViewState extends State<HexEditorView> {
                   ? Uint8List(0)
                   : _s.readWindow(
                       offset: BigInt.from(winStart),
-                      len: BigInt.from(winLen));
+                      len: BigInt.from(winLen),
+                    );
               final glyphs = _decodeChars(bytes);
               final modified = winLen == 0
                   ? const <ByteRange>[]
                   : _s.modifiedRanges(
                       offset: BigInt.from(winStart),
-                      len: BigInt.from(winLen));
+                      len: BigInt.from(winLen),
+                    );
 
               return Listener(
                 onPointerSignal: (event) {
@@ -643,7 +665,8 @@ class _HexEditorViewState extends State<HexEditorView> {
                       widget.onFontSizeChanged != null) {
                     final delta = event.scrollDelta.dy > 0 ? -1.0 : 1.0;
                     widget.onFontSizeChanged!(
-                        (_fontSize + delta).clamp(8.0, 40.0));
+                      (_fontSize + delta).clamp(8.0, 40.0),
+                    );
                   }
                 },
                 child: Focus(
@@ -660,6 +683,8 @@ class _HexEditorViewState extends State<HexEditorView> {
                               bytes: bytes,
                               glyphs: glyphs,
                               modified: modified,
+                              matches: widget.matches,
+                              currentMatch: widget.currentMatch,
                               winStart: winStart,
                               firstRow: firstRow,
                               lastRow: lastRow,
@@ -681,7 +706,8 @@ class _HexEditorViewState extends State<HexEditorView> {
                               addressDigits: _addressDigits,
                               offsetRadix: _settings.offsetRadix,
                               byteRadix: _settings.byteRadix,
-                              textColor: Theme.of(context).brightness ==
+                              textColor:
+                                  Theme.of(context).brightness ==
                                       Brightness.light
                                   ? Colors.black
                                   : Colors.white,
@@ -720,7 +746,11 @@ class _HexEditorViewState extends State<HexEditorView> {
   }
 
   Widget _buildToolbar(BuildContext context, ColorScheme scheme) {
-    Widget radixToggle(String label, HexRadix value, ValueChanged<HexRadix> on) {
+    Widget radixToggle(
+      String label,
+      HexRadix value,
+      ValueChanged<HexRadix> on,
+    ) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -744,15 +774,22 @@ class _HexEditorViewState extends State<HexEditorView> {
             // Insert / overwrite.
             OutlinedButton(
               onPressed: () => _updateSettings(
-                  _settings.copyWith(insertMode: !_settings.insertMode)),
+                _settings.copyWith(insertMode: !_settings.insertMode),
+              ),
               child: Text(_settings.insertMode ? 'INS' : 'OVR'),
             ),
             const SizedBox(width: 16),
-            radixToggle('Offset', _settings.offsetRadix,
-                (v) => _updateSettings(_settings.copyWith(offsetRadix: v))),
+            radixToggle(
+              'Offset',
+              _settings.offsetRadix,
+              (v) => _updateSettings(_settings.copyWith(offsetRadix: v)),
+            ),
             const SizedBox(width: 16),
-            radixToggle('Bytes', _settings.byteRadix,
-                (v) => _updateSettings(_settings.copyWith(byteRadix: v))),
+            radixToggle(
+              'Bytes',
+              _settings.byteRadix,
+              (v) => _updateSettings(_settings.copyWith(byteRadix: v)),
+            ),
             const SizedBox(width: 16),
             const Text('Chars ', style: TextStyle(fontSize: 12)),
             DropdownButton<HexCharEncoding>(
@@ -762,8 +799,7 @@ class _HexEditorViewState extends State<HexEditorView> {
                   ? null
                   : _updateSettings(_settings.copyWith(charEncoding: v)),
               items: HexCharEncoding.values
-                  .map((e) =>
-                      DropdownMenuItem(value: e, child: Text(e.label)))
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                   .toList(),
             ),
             const SizedBox(width: 16),
@@ -793,6 +829,8 @@ class _HexPainter extends CustomPainter {
   final Uint8List bytes;
   final List<String> glyphs;
   final List<ByteRange> modified;
+  final List<HexMatch> matches;
+  final HexMatch? currentMatch;
   final int winStart;
   final int firstRow;
   final int lastRow;
@@ -828,6 +866,8 @@ class _HexPainter extends CustomPainter {
     required this.bytes,
     required this.glyphs,
     required this.modified,
+    required this.matches,
+    required this.currentMatch,
     required this.winStart,
     required this.firstRow,
     required this.lastRow,
@@ -869,6 +909,22 @@ class _HexPainter extends CustomPainter {
     return false;
   }
 
+  HexMatch? _matchAt(int offset) {
+    var low = 0;
+    var high = matches.length;
+    while (low < high) {
+      final mid = (low + high) >> 1;
+      if (matches[mid].offset <= offset) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    if (low == 0) return null;
+    final match = matches[low - 1];
+    return offset < match.offset + match.length ? match : null;
+  }
+
   void _text(Canvas canvas, String s, double x, double y, Color color) {
     final tp = TextPainter(
       text: TextSpan(
@@ -903,7 +959,10 @@ class _HexPainter extends CustomPainter {
 
       // Offset address.
       final addr = offsetRadix == HexRadix.hex
-          ? rowOffset.toRadixString(16).toUpperCase().padLeft(addressDigits, '0')
+          ? rowOffset
+                .toRadixString(16)
+                .toUpperCase()
+                .padLeft(addressDigits, '0')
           : rowOffset.toString().padLeft(addressDigits, '0');
       _text(canvas, addr, charW, y, gutterFg);
 
@@ -919,10 +978,28 @@ class _HexPainter extends CustomPainter {
         final b = bytes[off - winStart];
         final cellX = _hexCellX(k);
         final modifiedHere = _isModified(off);
-
-        if (modifiedHere) {
+        final match = _matchAt(off);
+        final isCurrent =
+            match != null &&
+            (identical(match, currentMatch) ||
+                (currentMatch != null &&
+                    match.offset == currentMatch!.offset &&
+                    match.length == currentMatch!.length));
+        final Color? background = match != null
+            ? (isCurrent
+                  ? const Color(0xFFFF9800).withValues(alpha: 0.65)
+                  : const Color(0xFF42A5F5).withValues(alpha: 0.35))
+            : (modifiedHere ? modifiedBg : null);
+        final gx = charStartX + k * charW;
+        if (background != null) {
           canvas.drawRect(
-              Rect.fromLTWH(cellX, y, cellDigits * charW, rowH), Paint()..color = modifiedBg);
+            Rect.fromLTWH(cellX, y, cellDigits * charW, rowH),
+            Paint()..color = background,
+          );
+          canvas.drawRect(
+            Rect.fromLTWH(gx, y, charW, rowH),
+            Paint()..color = background,
+          );
         }
 
         final cell = byteRadix == HexRadix.hex
@@ -931,14 +1008,14 @@ class _HexPainter extends CustomPainter {
         _text(canvas, cell, cellX, y, modifiedHere ? modifiedFg : textColor);
 
         // Character panel glyph.
-        final gx = charStartX + k * charW;
-        if (modifiedHere) {
-          canvas.drawRect(
-              Rect.fromLTWH(gx, y, charW, rowH), Paint()..color = modifiedBg);
-        }
         final g = glyphs[off - winStart];
-        _text(canvas, g, gx, y,
-            modifiedHere ? modifiedFg : (g == '·' ? dimColor : textColor));
+        _text(
+          canvas,
+          g,
+          gx,
+          y,
+          modifiedHere ? modifiedFg : (g == '·' ? dimColor : textColor),
+        );
 
         // Caret highlight (both panels).
         if (off == caret) {
@@ -951,8 +1028,13 @@ class _HexPainter extends CustomPainter {
     if (caretRow < 0 || caretCol < 0) {}
   }
 
-  void _paintCaret(Canvas canvas, int k, double y,
-      {required bool isHexRegion, bool empty = false}) {
+  void _paintCaret(
+    Canvas canvas,
+    int k,
+    double y, {
+    required bool isHexRegion,
+    bool empty = false,
+  }) {
     final active = Paint()
       ..color = caretColor.withOpacity(hasFocus ? 0.9 : 0.4)
       ..style = PaintingStyle.stroke
@@ -967,25 +1049,29 @@ class _HexPainter extends CustomPainter {
     if (isHexRegion) {
       canvas.drawRect(hexRect, active);
       canvas.drawRect(
-          charRect,
-          Paint()
-            ..color = caretColor.withOpacity(0.25)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0);
+        charRect,
+        Paint()
+          ..color = caretColor.withOpacity(0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
       if (!empty && hasFocus) {
         // Nibble caret bar.
         final nx = cellX + nibble * charW;
-        canvas.drawRect(Rect.fromLTWH(nx, y + rowH - 2, charW, 2),
-            Paint()..color = caretColor);
+        canvas.drawRect(
+          Rect.fromLTWH(nx, y + rowH - 2, charW, 2),
+          Paint()..color = caretColor,
+        );
       }
     } else {
       canvas.drawRect(charRect, active);
       canvas.drawRect(
-          hexRect,
-          Paint()
-            ..color = caretColor.withOpacity(0.25)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0);
+        hexRect,
+        Paint()
+          ..color = caretColor.withOpacity(0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
     }
   }
 

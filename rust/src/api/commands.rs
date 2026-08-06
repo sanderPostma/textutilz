@@ -19,7 +19,9 @@ pub struct CommandRegistry {
 
 impl CommandRegistry {
     pub fn new() -> Self {
-        let mut reg = Self { commands: Vec::new() };
+        let mut reg = Self {
+            commands: Vec::new(),
+        };
         reg.register_defaults();
         reg
     }
@@ -207,10 +209,30 @@ impl CommandRegistry {
             title: "Go to Line".to_string(),
             category: "Search".to_string(),
             icon: Some("my_location".to_string()),
-            shortcut: None,
+            shortcut: Some("Ctrl+G".to_string()),
+            toggled: None,
+            panel_id: Some("search.goto".to_string()),
+            action_id: None,
+        });
+        self.commands.push(CommandDescriptor {
+            id: "search.mark".to_string(),
+            title: "Mark...".to_string(),
+            category: "Search".to_string(),
+            icon: Some("bookmark".to_string()),
+            shortcut: Some("Ctrl+M".to_string()),
             toggled: None,
             panel_id: None,
-            action_id: Some("search.goto".to_string()),
+            action_id: Some("search.mark".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "search.findall".to_string(),
+            title: "Find All".to_string(),
+            category: "Search".to_string(),
+            icon: Some("search".to_string()),
+            shortcut: Some("Ctrl+Shift+F".to_string()),
+            toggled: None,
+            panel_id: None,
+            action_id: Some("search.findall".to_string()),
         });
 
         // View commands
@@ -234,6 +256,29 @@ impl CommandRegistry {
             panel_id: None,
             action_id: Some("view.wordwrap".to_string()),
         });
+        // Only the fold-all pair is listed. The per-level bindings
+        // (Alt+1..8 and Alt+Shift+1..8) and the caret pair (Ctrl+Alt+F) stay
+        // keyboard-only — eighteen more rows would swamp the column.
+        self.commands.push(CommandDescriptor {
+            id: "view.foldall".to_string(),
+            title: "Fold All".to_string(),
+            category: "View".to_string(),
+            icon: Some("unfold_less".to_string()),
+            shortcut: Some("Alt+0".to_string()),
+            toggled: None,
+            panel_id: None,
+            action_id: Some("view.foldall".to_string()),
+        });
+        self.commands.push(CommandDescriptor {
+            id: "view.unfoldall".to_string(),
+            title: "Unfold All".to_string(),
+            category: "View".to_string(),
+            icon: Some("unfold_more".to_string()),
+            shortcut: Some("Alt+Shift+0".to_string()),
+            toggled: None,
+            panel_id: None,
+            action_id: Some("view.unfoldall".to_string()),
+        });
 
         // Tools
         self.commands.push(CommandDescriptor {
@@ -247,6 +292,23 @@ impl CommandRegistry {
             panel_id: Some("mime".to_string()),
             action_id: None,
         });
+
+        for (id, title, panel_id) in [
+            ("tools.json", "JSON tools", "structured.json"),
+            ("tools.yaml", "YAML tools", "structured.yaml"),
+            ("tools.xml", "XML tools", "structured.xml"),
+        ] {
+            self.commands.push(CommandDescriptor {
+                id: id.to_string(),
+                title: title.to_string(),
+                category: "Tools".to_string(),
+                icon: Some("data_object".to_string()),
+                shortcut: None,
+                toggled: None,
+                panel_id: Some(panel_id.to_string()),
+                action_id: None,
+            });
+        }
 
         // Specific MIME Commands
         self.commands.push(CommandDescriptor {
@@ -388,33 +450,145 @@ impl CommandRegistry {
 
         // NPP Edit Specific Sub-Commands (for Search)
         let sub_ops = vec![
-            ("edit.case.uppercase", "UPPERCASE", "Convert Case", "edit.case"),
-            ("edit.case.lowercase", "lowercase", "Convert Case", "edit.case"),
-            ("edit.case.proper", "Proper Case", "Convert Case", "edit.case"),
-            ("edit.case.proper_blend", "Proper Case (blend)", "Convert Case", "edit.case"),
-            ("edit.case.sentence", "Sentence case", "Convert Case", "edit.case"),
-            ("edit.case.sentence_blend", "Sentence case (blend)", "Convert Case", "edit.case"),
-            ("edit.case.invert", "iNVERT cASE", "Convert Case", "edit.case"),
-            ("edit.case.random", "ranDOm CasE", "Convert Case", "edit.case"),
-
-            ("edit.eol.windows", "Windows (CR LF)", "EOL Conversion", "edit.eol"),
+            (
+                "edit.case.uppercase",
+                "UPPERCASE",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.lowercase",
+                "lowercase",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.proper",
+                "Proper Case",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.proper_blend",
+                "Proper Case (blend)",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.sentence",
+                "Sentence case",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.sentence_blend",
+                "Sentence case (blend)",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.invert",
+                "iNVERT cASE",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.case.random",
+                "ranDOm CasE",
+                "Convert Case",
+                "edit.case",
+            ),
+            (
+                "edit.eol.windows",
+                "Windows (CR LF)",
+                "EOL Conversion",
+                "edit.eol",
+            ),
             ("edit.eol.unix", "Unix (LF)", "EOL Conversion", "edit.eol"),
-            ("edit.eol.mac", "Macintosh (CR)", "EOL Conversion", "edit.eol"),
-
-            ("edit.blank.trim_trailing", "Trim Trailing Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.trim_leading", "Trim Leading Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.trim_both", "Trim Leading and Trailing Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.eol_to_space", "EOL to Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.trim_both_and_eol_to_space", "Trim both and EOL to Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.tab_to_space", "TAB to Space", "Blank Operations", "edit.blank"),
-            ("edit.blank.space_to_tab_all", "Space to TAB (All)", "Blank Operations", "edit.blank"),
-            ("edit.blank.space_to_tab_leading", "Space to TAB (Leading)", "Blank Operations", "edit.blank"),
-
-            ("edit.comment.toggle_single_line", "Toggle Single Line Comment", "Comment / Uncomment", "edit.comment"),
-            ("edit.comment.block_comment", "Block Comment", "Comment / Uncomment", "edit.comment"),
-            ("edit.comment.block_uncomment", "Block Uncomment", "Comment / Uncomment", "edit.comment"),
-            ("edit.comment.single_line_comment", "Single Line Comment", "Comment / Uncomment", "edit.comment"),
-            ("edit.comment.single_line_uncomment", "Single Line Uncomment", "Comment / Uncomment", "edit.comment"),
+            (
+                "edit.eol.mac",
+                "Macintosh (CR)",
+                "EOL Conversion",
+                "edit.eol",
+            ),
+            (
+                "edit.blank.trim_trailing",
+                "Trim Trailing Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.trim_leading",
+                "Trim Leading Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.trim_both",
+                "Trim Leading and Trailing Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.eol_to_space",
+                "EOL to Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.trim_both_and_eol_to_space",
+                "Trim both and EOL to Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.tab_to_space",
+                "TAB to Space",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.space_to_tab_all",
+                "Space to TAB (All)",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.blank.space_to_tab_leading",
+                "Space to TAB (Leading)",
+                "Blank Operations",
+                "edit.blank",
+            ),
+            (
+                "edit.comment.toggle_single_line",
+                "Toggle Single Line Comment",
+                "Comment / Uncomment",
+                "edit.comment",
+            ),
+            (
+                "edit.comment.block_comment",
+                "Block Comment",
+                "Comment / Uncomment",
+                "edit.comment",
+            ),
+            (
+                "edit.comment.block_uncomment",
+                "Block Uncomment",
+                "Comment / Uncomment",
+                "edit.comment",
+            ),
+            (
+                "edit.comment.single_line_comment",
+                "Single Line Comment",
+                "Comment / Uncomment",
+                "edit.comment",
+            ),
+            (
+                "edit.comment.single_line_uncomment",
+                "Single Line Uncomment",
+                "Comment / Uncomment",
+                "edit.comment",
+            ),
         ];
 
         for (id, title, cat, panel) in sub_ops {
@@ -446,7 +620,7 @@ impl CommandRegistry {
             .cloned()
             .collect()
     }
-    
+
     #[frb(sync)]
     pub fn get_all(&self) -> Vec<CommandDescriptor> {
         self.commands.clone()

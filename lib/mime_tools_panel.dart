@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'panel_scope_note.dart';
 import 'package:textutilz/src/rust/api/mime_tools.dart';
 
 /// The four MIME-tool categories, one per tab.
@@ -6,11 +8,11 @@ enum MimeCategory { base64, quotedPrintable, url, saml }
 
 extension MimeCategoryLabel on MimeCategory {
   String get label => switch (this) {
-        MimeCategory.base64 => 'Base64',
-        MimeCategory.quotedPrintable => 'Quoted-printable',
-        MimeCategory.url => 'URL',
-        MimeCategory.saml => 'SAML',
-      };
+    MimeCategory.base64 => 'Base64',
+    MimeCategory.quotedPrintable => 'Quoted-printable',
+    MimeCategory.url => 'URL',
+    MimeCategory.saml => 'SAML',
+  };
 }
 
 /// A fully-specified MIME transform: the category plus the selected toggle
@@ -79,7 +81,6 @@ class MimeOp {
   }
 }
 
-
 /// Material's default 48px tap target makes each wrap run 48px tall on its
 /// own, well over the docked bar's height budget (see the ceilings in
 /// test/tool_bar_layout_test.dart). shrinkWrap + compact density brings a run
@@ -133,13 +134,15 @@ Widget _mimeModeSelector(bool decode, ValueChanged<bool> onChanged) {
   return SegmentedButton<bool>(
     segments: const [
       ButtonSegment(
-          value: false,
-          label: Text('Encode'),
-          icon: Icon(Icons.lock_outline, size: 16)),
+        value: false,
+        label: Text('Encode'),
+        icon: Icon(Icons.lock_outline, size: 16),
+      ),
       ButtonSegment(
-          value: true,
-          label: Text('Decode'),
-          icon: Icon(Icons.lock_open, size: 16)),
+        value: true,
+        label: Text('Decode'),
+        icon: Icon(Icons.lock_open, size: 16),
+      ),
     ],
     selected: {decode},
     showSelectedIcon: false,
@@ -150,15 +153,11 @@ Widget _mimeModeSelector(bool decode, ValueChanged<bool> onChanged) {
 
 /// The status text every MIME surface shows: whether a run would hit the
 /// selection or the whole document, or why it is disabled.
-Widget _mimeStatusText(
-    bool enabled, bool hasSelection, ColorScheme scheme) {
-  return Text(
-    enabled
-        ? (hasSelection
-            ? 'Transforms the selection.'
-            : '⚠️ Transforms the whole document.')
-        : 'Open a document in Edit mode to run MIME tools.',
-    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+Widget _mimeStatusText(bool enabled, bool hasSelection, ColorScheme scheme) {
+  return PanelScopeNote(
+    enabled: enabled,
+    hasSelection: hasSelection,
+    disabledMessage: 'Open a document in Edit mode to run MIME tools.',
   );
 }
 
@@ -217,7 +216,9 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
         );
       case MimeCategory.quotedPrintable:
         return MimeOp(
-            category: MimeCategory.quotedPrintable, decode: _qpDecode);
+          category: MimeCategory.quotedPrintable,
+          decode: _qpDecode,
+        );
       case MimeCategory.url:
         return MimeOp(
           category: MimeCategory.url,
@@ -263,11 +264,12 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
               // Live label: the tabs and the Encode/Decode selector both
               // change which operation this runs, so a constant 'Apply'
               // would lie about what the button does.
-              label: Text('Apply · ${_currentOp.label}',
-                  style: const TextStyle(fontSize: 13)),
+              label: Text(
+                'Apply · ${_currentOp.label}',
+                style: const TextStyle(fontSize: 13),
+              ),
               style: _denseFilledStyle,
-              onPressed:
-                  widget.enabled ? () => widget.onRun(_currentOp) : null,
+              onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
             ),
           ],
         ),
@@ -279,19 +281,30 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
     switch (_tab) {
       case MimeCategory.base64:
         return [
-          _mimeModeSelector(
-              _b64Decode, (v) => setState(() => _b64Decode = v)),
+          _mimeModeSelector(_b64Decode, (v) => setState(() => _b64Decode = v)),
           if (_b64Decode) ...[
-            _mimeCheck('Strict', _b64Strict,
-                (v) => setState(() => _b64Strict = v)),
+            _mimeCheck(
+              'Strict',
+              _b64Strict,
+              (v) => setState(() => _b64Strict = v),
+            ),
           ] else ...[
-            _mimeCheck('Padding', _b64Padding,
-                (v) => setState(() => _b64Padding = v)),
-            _mimeCheck('Unix EOL', _b64UnixEol,
-                (v) => setState(() => _b64UnixEol = v)),
+            _mimeCheck(
+              'Padding',
+              _b64Padding,
+              (v) => setState(() => _b64Padding = v),
+            ),
+            _mimeCheck(
+              'Unix EOL',
+              _b64UnixEol,
+              (v) => setState(() => _b64UnixEol = v),
+            ),
           ],
           _mimeCheck(
-              'By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
+            'By line',
+            _b64ByLine,
+            (v) => setState(() => _b64ByLine = v),
+          ),
         ];
       case MimeCategory.quotedPrintable:
         return [
@@ -299,26 +312,33 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
         ];
       case MimeCategory.url:
         return [
-          _mimeModeSelector(
-              _urlDecode, (v) => setState(() => _urlDecode = v)),
+          _mimeModeSelector(_urlDecode, (v) => setState(() => _urlDecode = v)),
           if (!_urlDecode) ...[
             SegmentedButton<UrlEncodeVariant>(
               segments: const [
                 ButtonSegment(
-                    value: UrlEncodeVariant.rfc1738, label: Text('RFC1738')),
+                  value: UrlEncodeVariant.rfc1738,
+                  label: Text('RFC1738'),
+                ),
                 ButtonSegment(
-                    value: UrlEncodeVariant.extended, label: Text('Extended')),
+                  value: UrlEncodeVariant.extended,
+                  label: Text('Extended'),
+                ),
                 ButtonSegment(
-                    value: UrlEncodeVariant.full, label: Text('Full')),
+                  value: UrlEncodeVariant.full,
+                  label: Text('Full'),
+                ),
               ],
               selected: {_urlVariant},
               showSelectedIcon: false,
               style: _denseSegmented,
-              onSelectionChanged: (s) =>
-                  setState(() => _urlVariant = s.first),
+              onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
             ),
-            _mimeCheck('By line', _urlByLine,
-                (v) => setState(() => _urlByLine = v)),
+            _mimeCheck(
+              'By line',
+              _urlByLine,
+              (v) => setState(() => _urlByLine = v),
+            ),
           ],
         ];
       case MimeCategory.saml:
@@ -399,7 +419,7 @@ class SingleMimeToolPanel extends StatefulWidget {
 
 class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   late bool _decode;
-  
+
   bool _b64Padding = true;
   bool _b64UnixEol = false;
   bool _b64Strict = false;
@@ -448,20 +468,19 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ..._optionWidgets(scheme),
-        Text(
-          widget.enabled
-              ? (widget.hasSelection
-                  ? 'Transforms the selection.'
-                  : '⚠️ Transforms the whole document.')
-              : 'Open a document in Edit mode to run MIME tools.',
-          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        PanelScopeNote(
+          enabled: widget.enabled,
+          hasSelection: widget.hasSelection,
+          disabledMessage: 'Open a document in Edit mode to run MIME tools.',
         ),
         FilledButton.icon(
           icon: const Icon(Icons.play_arrow, size: 16),
           // Live label: the Encode/Decode selector above changes which
           // operation this button runs, so a constant 'Apply' would lie.
-          label: Text('Apply · ${_currentOp.label}',
-              style: const TextStyle(fontSize: 13)),
+          label: Text(
+            'Apply · ${_currentOp.label}',
+            style: const TextStyle(fontSize: 13),
+          ),
           style: _denseButtonStyle,
           onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
         ),
@@ -505,8 +524,16 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   Widget _modeSelector(bool decode, ValueChanged<bool> onChanged) {
     return SegmentedButton<bool>(
       segments: const [
-        ButtonSegment(value: false, label: Text('Encode'), icon: Icon(Icons.lock_outline, size: 16)),
-        ButtonSegment(value: true, label: Text('Decode'), icon: Icon(Icons.lock_open, size: 16)),
+        ButtonSegment(
+          value: false,
+          label: Text('Encode'),
+          icon: Icon(Icons.lock_outline, size: 16),
+        ),
+        ButtonSegment(
+          value: true,
+          label: Text('Decode'),
+          icon: Icon(Icons.lock_open, size: 16),
+        ),
       ],
       selected: {decode},
       showSelectedIcon: false,
@@ -566,8 +593,14 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
       if (!_decode) ...[
         SegmentedButton<UrlEncodeVariant>(
           segments: const [
-            ButtonSegment(value: UrlEncodeVariant.rfc1738, label: Text('RFC1738')),
-            ButtonSegment(value: UrlEncodeVariant.extended, label: Text('Extended')),
+            ButtonSegment(
+              value: UrlEncodeVariant.rfc1738,
+              label: Text('RFC1738'),
+            ),
+            ButtonSegment(
+              value: UrlEncodeVariant.extended,
+              label: Text('Extended'),
+            ),
             ButtonSegment(value: UrlEncodeVariant.full, label: Text('Full')),
           ],
           selected: {_urlVariant},

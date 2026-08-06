@@ -1,15 +1,98 @@
 # TODO
 
-Deferred work, carried forward from the find/replace panel build (2026-08-05).
-Nothing here is blocking — the feature is merged and the suite is green
-(Rust 123/0, Dart 48/0, `flutter analyze` 0 errors).
+Outstanding work carried forward from the find/replace panel build
+(2026-08-05). Nothing here is currently blocking.
 
 Detail for most of these lives in
 `docs/superpowers/specs/2026-08-05-find-replace-panel-design.md`.
 
+IMPORTANT: make sure non-ui logic is done in rust, direct ui related logic may be in dart)
+
 ---
 
-## 0. Docked tool bars — carried over from that build (2026-08-05)
+## 0. Structured formats (JSON / JSON5 / YAML / XML)
+
+Detail in `docs/superpowers/specs/2026-08-06-structured-formats-design.md`.
+
+Shipped: the Rust port (`rust/src/markup/`), format-aware comment/uncomment,
+JSON5 as a dialect switch on the JSON bar, escape/unescape, validation with a
+double-clickable error list and red squiggles in the editor, auto-validation on
+a 2 s idle debounce, syntax colouring from a real lexer, matched bracket/tag
+highlighting, block collapse with a fold gutter, and silent format
+autodetection reported in the status bar and used to narrow the Tools menu.
+Since 2026-08-06 also Notepad++'s folding keys — Alt+0 / Alt+Shift+0 for all,
+Alt+1..8 and Alt+Shift+1..8 per nesting level, Ctrl+Alt+F / Ctrl+Alt+Shift+F
+around the caret — plus Fold All and Unfold All in the View menu, and
+collapsed regions that survive a tab switch and a restart
+(`DocumentMeta.collapsedFolds`, a `collapsed_folds` column on `documents`).
+Since 2026-08-06 also a per-document format pin — a status-bar picker offering
+Auto-detect plus the five formats, persisted as `DocumentMeta.languageOverride`
+and a `language_override` column. The JSON5 dialect is now one of those pins
+rather than an app-wide switch, so two JSON documents can be read as different
+dialects at once; the JSON bar's JSON5 toggle writes the pin.
+`EditSession::detect_markup_language` applies the precedence (pin beats every
+detection signal) so colouring, folding, comment syntax, the Tools menu, the
+status bar and validation cannot disagree about what a document is.
+
+Two notes for the next per-document field:
+
+1. `AppStore::init_schema` runs `ensure_column` after the `CREATE TABLE IF NOT
+   EXISTS` pair, because that DDL does nothing to a database that already
+   exists — a new column added to the DDL alone would make `load_session` fail
+   with "no such column" and silently cost the user every tab. Add to both, and
+   copy `a_database_from_before_the_language_column_still_loads`, which starts
+   from the schema users are actually running.
+2. `documents` passed diesel's default 16-column ceiling with
+   `language_override`, so `rust/Cargo.toml` now enables diesel's
+   `32-column-tables`. The next ceiling is 32, and the failure is a compile
+   error in the `diesel::table!` macro, not a runtime one.
+
+- [ ] **The fold key bindings have no automated test.** `foldAll`,
+      `foldToLevel`, `unfoldLevel` and the caret pair are covered by
+      `test/fold_commands_test.dart`, but that a keypress *reaches* them is not:
+      `_handleFoldShortcut` (`lib/main.dart`) and the editor's bubble guard
+      (`_bubbleAltDigits`, `lib/editor.dart`) both need the `_TextEditorState`
+      harness that §1 already wants. Alt+0, Alt+1..8 and Ctrl+Alt+F are manual
+      checks. Detail in
+      `docs/superpowers/specs/2026-08-06-fold-keyboard-design.md`.
+
+- [ ] **Auto-validation runs the full document pass.** `markupAnalysis` is
+      O(document); the 2 s idle debounce keeps a typing burst to one pass, but a
+      large file still pays for the whole document on every pause. The
+      `MAX_ANALYSIS_ROWS` cap (`rust/src/markup/mod.rs`) bounds it, and above
+      the cap the panel says so rather than showing an empty list.
+
+- [ ] **YAML autodetection needs two structural rows and one mapping row.** A
+      top-level sequence with no `---` marker (`- a\n- b`) reads as plain text,
+      and so does a flow collection continued on an unindented row
+      (`looks_like_yaml`, `rust/src/markup/language.rs`). Both were traded away
+      to stop Markdown being claimed as YAML; both only matter when the file has
+      no extension and no content type.
+
+- [ ] **The status-bar language picker has no automated test.** The pin itself
+      is covered from both sides — `test/language_override_test.dart` for the
+      Dart plumbing and persistence, `rust/src/api/edit_session.rs` for the
+      precedence — but that the menu is reachable and that picking an entry
+      calls `_setLanguageOverride` is a manual check, for the same reason as
+      the fold keys: it needs a harness over the app shell.
+
+- [ ] **The token palette is hardcoded.** `MarkupStyling.colorFor`
+      (`lib/markup_styling.dart`) holds a light and a dark colour per token
+      kind. Neither follows the app theme nor is user-configurable.
+
+- [ ] **Read and Tail call the lexer once per row build.** Each
+      `ListView.builder` row calls `session.markupTokens(row, row + 1)`
+      (`lib/main.dart`). Correct and cheap — it resumes from a cached checkpoint
+      — but a viewport-batched call would be one FFI crossing instead of ~50.
+
+- [ ] **XML DOCTYPE with an internal subset is scanned naively.** The lexer ends
+      the declaration at the first `>` (`rust/src/markup/xml.rs`), so a
+      `<!DOCTYPE x [ <!ENTITY ...> ]>` subset ends it early. Rare, and it costs
+      colouring rather than correctness elsewhere.
+
+---
+
+## 1. Docked tool bars
 
 Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 
@@ -22,7 +105,10 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
   close `IconButton` plus the ~23px title tab, so reaching ~52px means
   changing chrome the find bar shares; and `edit.blank`'s eight long labels
   need ~4 wrap runs at 800px. `test/tool_bar_layout_test.dart` now pins all
-  11 bar heights with zero slack, so this cannot regress silently.
+  15 bar heights with zero slack, so this cannot regress silently. The
+  structured bars are the tallest at 127px (JSON) and 115px (YAML, XML):
+  five operation buttons, the scope note, a divider and the auto-validate
+  switch need three runs at 800px.
 - **The MIME title tab is stale on Encode/Decode** — tap Decode and the tab
   still reads "Base64 Encode"; only the Apply label updates. `ToolBar`
   holds a fixed title per panel id (`lib/tool_bar.dart:43-51`). Fixing it
@@ -31,63 +117,48 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 - **Three behaviours have no automated test** — `_openToolBar`'s early
   return, the ViewMode retarget, and the live selection marker. All need a
   `_TextEditorState` harness that does not exist; they are manual checks.
-- **Manual GUI verification is owed**, same as §1 below: the spec's
-  9-point checklist, plus confirming the find bar is pixel-identical to
-  before it adopted `DockedBar`.
+- **Manual GUI verification is still owed** for the docked-tool-bar spec's
+  9-point checklist, including confirming that the find bar is pixel-identical
+  to its pre-`DockedBar` appearance. The separate find/replace checklist has
+  been completed in the running Linux app.
 
 ---
 
-## 1. Verify the find/replace panel in the running app
+## 2. Follow-up features
 
-**The entire feature was built headless. Nobody has ever looked at it.** Every
-claim about how it behaves rests on tests and code reading. Do this first.
+These larger features were scoped out during the original find/replace design.
 
-- [ ] Ctrl+F opens the panel docked above the editor; it pushes the document
-      down and covers no text
-- [ ] Typing highlights every visible match, with the current one accented
-- [ ] ▲/▼ and F3/Shift+F3 step and scroll to matches; Esc closes and returns
-      focus to the editor
-- [ ] Esc, then Ctrl+F again, re-shows results for the retained query (must not
-      say "No results")
-- [ ] Choosing Replace from the menu while Find is open keeps the typed query
-- [ ] Replace walks forward through matches; one Ctrl+Z reverts an entire
-      Replace All
-- [ ] Select text, then Ctrl+F: "In selection" is enabled, and with it on the
-      highlights, counter and Replace All all agree
-- [ ] Edit the document with the panel open: highlights follow the edit and the
-      caret is **not** stolen mid-word
-- [ ] Scroll far down a large file: matches highlight in regions never stepped to
-- [ ] Narrow the window: the panel degrades without an overflow stripe; query
-      field, arrows and close button stay usable
-- [ ] Highlight colours are legible against the selection layer in **both**
-      light and dark themes
-
-Three code paths have no automated coverage at all and rest entirely on these
-checks: `_openFind` and `_retargetFind` (both in `_MyHomePageState`, which no
-test harness drives) and `stepForward`'s paged-branch prefetch (no observable
-output).
-
----
-
-## 2. Follow-up features (deliberately out of scope, each wants its own spec)
-
-These were scoped out during design. `MatchSpan` and `find_in_rows` are the
-primitives the first two build on.
-
-- [ ] **Mark mode** — Mark All / Clear all marks / Copy Marked Text, bookmark
-      line, purge for each search. Needs a persistent highlight layer separate
-      from the viewport scan.
-- [ ] **Find All results pane** — bottom dock listing every match with line
-      number and context, click to jump. Its own UI surface.
-- [ ] **Hex byte search** — find/replace in hex view. Different data model
-      (byte offsets, not rows); regex/whole-word/extended don't apply, so the
-      panel must adapt its toggles. `HexSession` needs a `find_bytes` primitive.
 - [ ] **Find in Files / Find in Projects** — directory-tree search. Large,
       separate feature; needs a results pane and background scanning.
-- [ ] **Go to Line** — `search.goto` is already declared in `commands.rs` and
-      already appears in the ribbon's Search column, but `_getAction` in
-      `menu_ribbon.dart` has no case for it, so choosing it does nothing.
-      Smallest item on this list.
+
+- [ ] **Window size and position are not persisted.** The GTK runner opens at a
+      hardcoded `gtk_window_set_default_size(window, 1000, 600)`
+      (`linux/runner/my_application.cc:59`) every launch, and nothing reads or
+      writes geometry. The `settings` key/value table already exists and is the
+      natural home — the same place `word_wrap` is kept. Needs care on two
+      points: a restored position can land off-screen when a monitor is
+      unplugged, so it has to be validated against the current screen; and
+      Wayland ignores programmatic window positioning entirely, so this is
+      size-and-maximised-state on Wayland and full geometry on X11. Note the
+      980px minimum width already enforced in the runner.
+
+- [ ] **The tab strip has no overflow affordance.** It is a bare horizontal
+      `ListView.builder` (`lib/main.dart:1821`): with more tabs than fit, the
+      extra ones are reachable only by dragging or wheel-scrolling the strip.
+      There are no scroll arrows, no scrollbar, and — the sharper problem —
+      nothing scrolls the active tab into view, so switching tabs by any means
+      other than clicking can leave the highlighted tab off-screen. A
+      `ScrollController` with `Scrollable.ensureVisible` on activation is the
+      minimum; chevron buttons at the ends are the Notepad++ shape.
+
+- [ ] **No Ctrl+Tab tab switcher.** There is no Tab binding at app level at all
+      (`_handleGlobalShortcut`, `lib/main.dart`) — the only Tab handler is the
+      editor inserting an indent (`lib/editor.dart:1406`).
+      Wanted: Ctrl+Tab / Ctrl+Shift+Tab cycling in most-recently-used order,
+      with an overlay listing the open tabs while Ctrl is held. The editor's
+      existing `_onHardwareKey` already tracks Ctrl being held, which is what
+      the overlay needs to know when to dismiss. Pairs with the overflow item
+      above: a switcher is the answer to 200 tabs, not a longer strip.
 
 ---
 
@@ -111,30 +182,29 @@ primitives the first two build on.
       Interim option if it bites before then: warn or confirm above some match
       count, so nobody hits a multi-minute freeze.
 
+- [ ] **What does 200 open tabs of large files actually cost?** Established so
+      far, by reading the code rather than measuring: nothing is mmap'd (there
+      is no `memmap` dependency, despite the word appearing in the specs).
+      `FileBuffer` (`rust/src/api/file_manager.rs:38`) holds an open `File`
+      handle plus `line_offsets: Vec<usize>` — **8 bytes per line, resident for
+      as long as the tab is open** — and reads rows from disk on demand. File
+      *contents* are therefore not in memory, but the index is: a 10M-line log
+      is ~80MB of `line_offsets` alone, and 200 of those would be ~16GB.
+      That index, not the file bytes, is the thing to measure and to bound.
+
+      On top of it, per open tab: the `overlay` HashMap (only lines actually
+      edited), the undo and redo stacks (which are unbounded), the markup
+      checkpoint cache (one `LexState` per 128 rows, and only for a document
+      someone coloured), and one OS file descriptor.
+
+      Worth answering with real numbers before deciding anything. If it does
+      bite, the shapes are: a sparser line index (every Nth line plus a scan),
+      or evicting the index for tabs that have not been looked at, rebuilding
+      it on activation.
+
 ---
 
 ## 4. Code follow-ups (parked, none blocking)
-
-- [ ] **Burst stepping can wrap early** (`lib/find_state.dart`, `stepForward`).
-      With several `stepForward()` calls in flight, a step whose window load
-      joins another's may still see `_currentIndex == _loaded.length - 1` and
-      wrap to the first match while unscanned windows remain. Only reachable by
-      holding key-repeat across a window boundary; sequential stepping is exact.
-      One-line hardening: require `_loadedTo >= _lineCount` before taking the
-      wrap branch.
-
-- [ ] **Fix the misleading comment on scope clamping** (`scope_row_bounds` in
-      `rust/src/api/edit_session.rs`, and its test comment). The comment says
-      clamping "changes no output". That is wrong: for a greedy dot-all pattern
-      the clamp can *add* a match, because match extent depends on how much text
-      was scanned. The behaviour is correct and arguably better — the clamp can
-      only add, never drop — but the stated rationale should not be trusted by
-      the next reader.
-
-- [ ] **`dispose()` does not invalidate `_generation`** (`lib/find_state.dart`).
-      A `_loadForward` loop already in flight keeps paging the whole document
-      after the panel closes. No crash (`_notify()` guards the disposed case),
-      just wasted work on a large file.
 
 - [ ] **Two concurrent sweeps are possible** — `refresh`'s unawaited
       `_startSweep` plus `recount`'s awaited one. Harmless and pre-existing.
@@ -180,18 +250,6 @@ Treat "the tests pass" with more suspicion than usual in this area.
       covered via the `normalizeSelection` helper; the guard itself is not,
       because no harness drives `CustomEditorState`.
 
-- [ ] **`overlap_constant_is_used` is redundant**
-      (`rust/src/api/edit_session.rs`). It only re-asserts
-      `SEARCH_WINDOW_OVERLAP_ROWS == 64`, duplicating a `search.rs` test and
-      verifying nothing about the constant being *used*. The straddling-boundary
-      pair supersedes it. Delete.
-
-- [ ] **`paintSpan` wants a clarifying comment** (`lib/editor.dart`). It filters
-      rows against the viewport inside its loop rather than clamping the bounds
-      up front. Harmless — callers hand it viewport-scoped spans — but a reader
-      could mistake that filter for the scoping guarantee itself, which lives in
-      `_runViewportScan`.
-
 ---
 
 ## 6. Housekeeping
@@ -221,5 +279,5 @@ Treat "the tests pass" with more suspicion than usual in this area.
       dynamic library". Re-run `cargo build` after any Rust change or the tests
       exercise a stale library.
 
-- [ ] **`master` is 24 commits ahead of `origin/master`** and has not been
+- [ ] **`master` is 29 commits ahead of `origin/master`** and has not been
       pushed.
