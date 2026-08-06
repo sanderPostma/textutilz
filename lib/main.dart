@@ -119,6 +119,237 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       ? _tabs[_activeTabIndex]
       : null;
 
+  /// Scrolls the tab strip. Held here rather than per tab so the strip can be
+  /// driven from outside a tap — the active tab has to come into view when it
+  /// changes by any means, which is the sharper half of the overflow problem.
+  final ScrollController _tabStripController = ScrollController();
+
+  /// Open tabs in most-recently-used order, newest first, by document id.
+  ///
+  /// Ctrl+Tab walks this rather than the strip order, matching every editor
+  /// and browser: the tab you want next is almost always the one you were just
+  /// in, however far away it sits on screen.
+  final List<String> _mru = [];
+
+  /// While the Ctrl+Tab switcher is up: how far down the MRU list the
+  /// selection has walked. Null when the switcher is closed.
+  ///
+  /// The walk is not committed to [_activeTabIndex] until Ctrl is released, so
+  /// holding Ctrl and pressing Tab three times is one tab switch, not three —
+  /// otherwise each step would retarget the find panel and persist a session.
+  int? _switcherPos;
+
+  /// Make [index] the active tab: MRU, find retarget, session, and scrolling
+  /// the strip so the tab is actually visible.
+  ///
+  /// Every path that changes the active tab goes through here. Before it
+  /// existed, `setState(() => _activeTabIndex = i)` was written out at each
+  /// call site and the strip never scrolled, so switching by anything other
+  /// than a click could leave the highlighted tab off-screen.
+  void _activateTab(int index) {
+    if (index < 0 || index >= _tabs.length) return;
+    setState(() => _activeTabIndex = index);
+    _retargetFind();
+    _persistSession();
+  }
+
+  /// Move the active tab to the front of the MRU list.
+  void _touchMru() {
+    final tab = _activeTab;
+    if (tab == null) return;
+    _mru
+      ..remove(tab.meta.id)
+      ..insert(0, tab.meta.id);
+  }
+
+  /// The open tabs in MRU order. Tabs never activated in this run have no MRU
+  /// entry yet, so they follow in strip order rather than being dropped.
+  List<TabRuntime> get _mruTabs {
+    final byId = {for (final t in _tabs) t.meta.id: t};
+    final ordered = [
+      for (final id in _mru)
+        if (byId.remove(id) case final t?) t,
+    ];
+    return [...ordered, ...byId.values];
+  }
+
+  /// Scroll the strip so the active tab is on screen, after the frame that
+  /// built it — the chip's element may not exist yet when this is called.
+  void _revealActiveTab() {
+    final tab = _activeTab;
+    if (tab == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final context = tab.tabChipKey.currentContext;
+      if (context == null) {
+        // The chip has not been built, which is exactly the case that matters:
+        // `ListView.builder` only builds what is near the viewport, so a tab
+        // far down the strip has no element for `ensureVisible` to work from.
+        // Jump roughly to it by index first; the frame after that, the chip
+        // exists and the call below centres it properly.
+        _jumpStripToward(_activeTabIndex);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _revealActiveTab();
+        });
+        return;
+      }
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 150),
+      );
+    });
+  }
+
+  /// Walk the Ctrl+Tab selection [delta] places through the MRU list, opening
+  /// the switcher on the first press.
+  ///
+  /// Starts at 1, not 0: the first Ctrl+Tab should land on the *previous*
+  /// tab, which is what makes Ctrl+Tab-and-release a toggle between two
+  /// documents.
+  void _stepSwitcher(int delta) {
+    final count = _mruTabs.length;
+    if (count < 2) return;
+    setState(() {
+      final from = _switcherPos ?? 0;
+      _switcherPos = (from + delta) % count;
+      if (_switcherPos! < 0) _switcherPos = _switcherPos! + count;
+    });
+  }
+
+  /// Ctrl came up: land on whatever the switcher had selected.
+  void _commitSwitcher() {
+    final position = _switcherPos;
+    setState(() => _switcherPos = null);
+    if (position == null) return;
+    final target = _mruTabs.elementAtOrNull(position);
+    if (target == null) return;
+    _activateTab(_tabs.indexOf(target));
+  }
+
+  /// Whether the tab strip has more tabs than fit.
+  ///
+  /// Kept in state rather than read from the controller during build: the
+  /// controller has no clients on the first frame, and — the part that
+  /// actually bites — nothing rebuilds the strip when opening a tab pushes it
+  /// past the edge. A `ScrollMetricsNotification` fires on exactly that.
+  bool _tabStripOverflows = false;
+
+  /// The list shown while Ctrl+Tab is being held.
+  ///
+  /// Deliberately a plain overlay rather than a dialog or a route: it must not
+  /// take focus, because the keyboard state it depends on — Ctrl still being
+  /// down — is read from the focus node underneath it.
+  Widget _tabSwitcherOverlay() {
+    final tabs = _mruTabs;
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Center(
+          child: Material(
+            elevation: 12,
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(10),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 360),
+              child: ListView.builder(
+                key: const ValueKey('tab-switcher'),
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                itemCount: tabs.length,
+                itemBuilder: (context, index) {
+                  final selected = index == _switcherPos;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    color: selected
+                        ? scheme.secondaryContainer
+                        : Colors.transparent,
+                    child: Row(
+                      children: [
+                        Icon(
+                          tabs[index].isDirty
+                              ? Icons.circle
+                              : Icons.description_outlined,
+                          size: 12,
+                          color: selected
+                              ? scheme.onSecondaryContainer
+                              : scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            tabs[index].name,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: selected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                              color: selected
+                                  ? scheme.onSecondaryContainer
+                                  : scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One end of the tab strip: a chevron that scrolls it.
+  ///
+  /// Shown only when the strip overflows, so the common case of a handful of
+  /// tabs looks exactly as it did before.
+  Widget _stripChevron(IconData icon, String tooltip, double direction) {
+    if (!_tabStripOverflows) return const SizedBox.shrink();
+    return IconButton(
+      icon: Icon(icon, size: 16),
+      tooltip: tooltip,
+      onPressed: () => _scrollStrip(direction),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 24, height: 28),
+    );
+  }
+
+  /// Scroll the strip to about where [index] should be, assuming tabs are of
+  /// roughly equal width. Only a first approximation — it exists to get the
+  /// real chip built so [_revealActiveTab] can then place it exactly.
+  void _jumpStripToward(int index) {
+    if (!_tabStripController.hasClients || _tabs.isEmpty) return;
+    final position = _tabStripController.position;
+    final full = position.maxScrollExtent + position.viewportDimension;
+    final target =
+        (full * index / _tabs.length - position.viewportDimension / 2).clamp(
+          0.0,
+          position.maxScrollExtent,
+        );
+    _tabStripController.jumpTo(target);
+  }
+
+  /// Nudge the strip by roughly one screenful, for the chevron buttons.
+  void _scrollStrip(double direction) {
+    if (!_tabStripController.hasClients) return;
+    final position = _tabStripController.position;
+    final target = (position.pixels + direction * position.viewportDimension)
+        .clamp(0.0, position.maxScrollExtent);
+    _tabStripController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+    );
+  }
+
   final FocusNode _focusNode = FocusNode();
   bool _isRibbonVisible = false;
 
@@ -1140,7 +1371,26 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   // These reach us by bubbling up from the focused editor/viewer, which return
   // KeyEventResult.ignored for these Ctrl combos so the ancestor Focus sees them.
   KeyEventResult _handleGlobalShortcut(KeyEvent event) {
+    // Ctrl coming up is what commits the Ctrl+Tab switcher, so it has to be
+    // seen before the KeyDownEvent filter below.
+    if (event is KeyUpEvent &&
+        _switcherPos != null &&
+        !HardwareKeyboard.instance.isControlPressed) {
+      _commitSwitcher();
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        HardwareKeyboard.instance.isControlPressed &&
+        _tabs.length > 1) {
+      _stepSwitcher(HardwareKeyboard.instance.isShiftPressed ? -1 : 1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape && _switcherPos != null) {
+      // Abandon the walk and stay where we started.
+      setState(() => _switcherPos = null);
+      return KeyEventResult.handled;
+    }
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       if (_activeToolPanelId != null) {
         _closeToolBar();
@@ -1513,6 +1763,13 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// matching Notepad++.
   void _retargetFind() {
     final tab = _activeTab;
+    // Every path that changes the active tab — opening a file, closing one,
+    // restoring a session, clicking the strip — already calls this, so it is
+    // also where the MRU order and the strip's scroll position are kept up to
+    // date. Both are no-ops when the tab did not actually change, which is the
+    // case for the view-mode switch that also lands here.
+    _touchMru();
+    _revealActiveTab();
     // The change-detector below is per-host, not per-tab, so a tab switch has
     // to re-read it or the first selection in the new tab can match the stale
     // value and skip the rebuild. The new editor's State doesn't exist yet.
@@ -1898,88 +2155,123 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                         Container(
                           height: 28,
                           color: tabBarColor,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _tabs.length,
-                            itemBuilder: (context, index) {
-                              final tab = _tabs[index];
-                              final isActive = index == _activeTabIndex;
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() => _activeTabIndex = index);
-                                  _retargetFind();
-                                  _persistSession();
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isActive
-                                        ? activeTabColor
-                                        : Colors.transparent,
-                                    border: isActive
-                                        ? Border(
-                                            bottom: BorderSide(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                              width: 2,
-                                            ),
-                                          )
-                                        : null,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Auto-delete (scratch) tabs carry a trash-can
-                                      // glyph so their ephemeral nature is obvious.
-                                      if (tab.meta.autoDelete !=
-                                          AutoDelete.off) ...[
-                                        Tooltip(
-                                          message:
-                                              'Auto-delete: ${tab.meta.autoDelete.label}',
-                                          child: Icon(
-                                            Icons.delete_outline,
-                                            size: 12,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .error
-                                                .withOpacity(0.8),
+                          child: Row(
+                            children: [
+                              _stripChevron(
+                                Icons.chevron_left,
+                                'Scroll tabs left',
+                                -1,
+                              ),
+                              Expanded(
+                                child: NotificationListener<ScrollMetricsNotification>(
+                                  onNotification: (notification) {
+                                    final overflows =
+                                        notification.metrics.maxScrollExtent >
+                                        0;
+                                    if (overflows != _tabStripOverflows) {
+                                      // Mid-layout, so the flag cannot be set
+                                      // here; the chevrons appear next frame.
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                            if (mounted) {
+                                              setState(
+                                                () => _tabStripOverflows =
+                                                    overflows,
+                                              );
+                                            }
+                                          });
+                                    }
+                                    return false;
+                                  },
+                                  child: ListView.builder(
+                                    controller: _tabStripController,
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _tabs.length,
+                                    itemBuilder: (context, index) {
+                                      final tab = _tabs[index];
+                                      final isActive = index == _activeTabIndex;
+                                      return GestureDetector(
+                                        key: tab.tabChipKey,
+                                        onTap: () => _activateTab(index),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? activeTabColor
+                                                : Colors.transparent,
+                                            border: isActive
+                                                ? Border(
+                                                    bottom: BorderSide(
+                                                      color: Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                                      width: 2,
+                                                    ),
+                                                  )
+                                                : null,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Auto-delete (scratch) tabs carry a trash-can
+                                              // glyph so their ephemeral nature is obvious.
+                                              if (tab.meta.autoDelete !=
+                                                  AutoDelete.off) ...[
+                                                Tooltip(
+                                                  message:
+                                                      'Auto-delete: ${tab.meta.autoDelete.label}',
+                                                  child: Icon(
+                                                    Icons.delete_outline,
+                                                    size: 12,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .error
+                                                        .withOpacity(0.8),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                              ],
+                                              Text(
+                                                tab.name,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: isActive
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                ),
+                                              ),
+                                              if (tab.isDirty) ...[
+                                                const SizedBox(width: 4),
+                                                const Icon(
+                                                  Icons.circle,
+                                                  size: 7,
+                                                  color: Colors.blueAccent,
+                                                ),
+                                              ],
+                                              const SizedBox(width: 6),
+                                              InkWell(
+                                                onTap: () => _closeTabAt(index),
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  size: 14,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        const SizedBox(width: 4),
-                                      ],
-                                      Text(
-                                        tab.name,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: isActive
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                        ),
-                                      ),
-                                      if (tab.isDirty) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.circle,
-                                          size: 7,
-                                          color: Colors.blueAccent,
-                                        ),
-                                      ],
-                                      const SizedBox(width: 6),
-                                      InkWell(
-                                        onTap: () => _closeTabAt(index),
-                                        child: const Icon(
-                                          Icons.close,
-                                          size: 14,
-                                        ),
-                                      ),
-                                    ],
+                                      );
+                                    },
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                              _stripChevron(
+                                Icons.chevron_right,
+                                'Scroll tabs right',
+                                1,
+                              ),
+                            ],
                           ),
                         ),
                       // The bars sit below the document tabs so the tab bar stays
@@ -2318,6 +2610,7 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                   // Tap-barrier: while the ribbon is open, a click anywhere in the
                   // content area below it closes it. Present only when the ribbon
                   // is visible, so it never intercepts normal interaction.
+                  if (_switcherPos != null) _tabSwitcherOverlay(),
                   if (_isRibbonVisible)
                     Positioned.fill(
                       child: GestureDetector(

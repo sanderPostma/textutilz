@@ -419,9 +419,13 @@ class CustomEditorState extends State<CustomEditor> {
     LogicalKeyboardKey.keyH,
     LogicalKeyboardKey.keyG,
     LogicalKeyboardKey.keyM,
+    // Ctrl+Tab is the tab switcher. Without this the editor would insert an
+    // indent instead, because plain Tab does exactly that a few hundred lines
+    // below and the Ctrl modifier alone does not stop it.
+    LogicalKeyboardKey.tab,
   };
 
-  /// Alt+<digit> is the folding family (Alt+0 fold all, Alt+1..8 fold to a
+  /// `Alt+<digit>` is the folding family (Alt+0 fold all, Alt+1..8 fold to a
   /// level). Kept apart from [_bubbleShortcutKeys] because that set is only
   /// consulted while Ctrl is down; these carry Alt instead, and would
   /// otherwise be typed into the document as digits.
@@ -1907,6 +1911,19 @@ class CustomEditorState extends State<CustomEditor> {
           if (HardwareKeyboard.instance.isAltPressed &&
               !HardwareKeyboard.instance.isControlPressed &&
               _bubbleAltDigits.contains(event.logicalKey)) {
+            return KeyEventResult.ignored;
+          }
+          // The Ctrl key itself, going down or coming up, means nothing to
+          // the editor — but its release is what commits the Ctrl+Tab
+          // switcher, so it has to reach the shell.
+          if (event.logicalKey == LogicalKeyboardKey.controlLeft ||
+              event.logicalKey == LogicalKeyboardKey.controlRight) {
+            return KeyEventResult.ignored;
+          }
+          // Escape is the shell's: it closes a docked bar, or abandons the
+          // Ctrl+Tab walk. The editor has never done anything with it, so
+          // swallowing it here only made those look broken.
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
             return KeyEventResult.ignored;
           }
           _handleKey(event);

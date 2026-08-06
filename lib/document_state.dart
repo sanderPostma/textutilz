@@ -183,6 +183,11 @@ class TabRuntime {
   final GlobalKey<HexEditorViewState> hexEditorKey =
       GlobalKey<HexEditorViewState>();
 
+  /// The tab's chip in the tab strip. Held per tab rather than per index
+  /// because indices shift when a tab closes, and the key is what
+  /// `Scrollable.ensureVisible` needs to scroll the active tab into view.
+  final GlobalKey tabChipKey = GlobalKey();
+
   /// Rust detected that the path no longer matches the version indexed by
   /// [session]. The user must explicitly reload in Read/Edit; clean Tail
   /// sessions retain their auto-follow behavior.

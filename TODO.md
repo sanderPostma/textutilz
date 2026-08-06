@@ -126,6 +126,14 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 
 These larger features were scoped out during the original find/replace design.
 
+Done 2026-08-07: the tab strip now scrolls the active tab into view whenever it
+changes (`_activateTab` / `_revealActiveTab`) and grows chevrons at both ends
+when it overflows, and Ctrl+Tab / Ctrl+Shift+Tab walk the open tabs in
+most-recently-used order behind a held-Ctrl overlay. Two editor guards were in
+the way and are worth knowing about: the editor swallowed Ctrl+Tab as an indent,
+and it swallowed Escape entirely — which had also been quietly breaking
+Escape-to-close-a-docked-bar in Edit mode.
+
 - [ ] **Find in Files / Find in Projects** — directory-tree search. Large,
       separate feature; needs a results pane and background scanning.
 
@@ -140,15 +148,6 @@ These larger features were scoped out during the original find/replace design.
       size-and-maximised-state on Wayland and full geometry on X11. Note the
       980px minimum width already enforced in the runner.
 
-- [ ] **The tab strip has no overflow affordance.** It is a bare horizontal
-      `ListView.builder` (`lib/main.dart:1821`): with more tabs than fit, the
-      extra ones are reachable only by dragging or wheel-scrolling the strip.
-      There are no scroll arrows, no scrollbar, and — the sharper problem —
-      nothing scrolls the active tab into view, so switching tabs by any means
-      other than clicking can leave the highlighted tab off-screen. A
-      `ScrollController` with `Scrollable.ensureVisible` on activation is the
-      minimum; chevron buttons at the ends are the Notepad++ shape.
-
 - [ ] **Named syntax themes.** Deferred from §0 on 2026-08-06 in favour of
       deriving the palette, which is now done. This is the other half people
       ask for: a set of named schemes (Monokai, Solarized, and so on) the user
@@ -159,15 +158,6 @@ These larger features were scoped out during the original find/replace design.
       only the editor. Note that a named theme is exactly the case the derived
       palette's contrast test exists to catch: a hand-authored scheme has no
       obligation to keep its surface near-white or near-black.
-
-- [ ] **No Ctrl+Tab tab switcher.** There is no Tab binding at app level at all
-      (`_handleGlobalShortcut`, `lib/main.dart`) — the only Tab handler is the
-      editor inserting an indent (`lib/editor.dart:1406`).
-      Wanted: Ctrl+Tab / Ctrl+Shift+Tab cycling in most-recently-used order,
-      with an overlay listing the open tabs while Ctrl is held. The editor's
-      existing `_onHardwareKey` already tracks Ctrl being held, which is what
-      the overlay needs to know when to dismiss. Pairs with the overflow item
-      above: a switcher is the answer to 200 tabs, not a longer strip.
 
 ---
 
