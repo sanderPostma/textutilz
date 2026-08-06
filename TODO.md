@@ -36,7 +36,14 @@ status bar and validation cannot disagree about what a document is.
 Since 2026-08-06 also a lexed-row window cached on `EditSession`, which took
 colouring a Read/Tail viewport from 5.3 ms per frame to 0.48 ms; XML DOCTYPE
 internal subsets scanned as one declaration; and YAML rows continuing an open
-flow collection treated as continuations rather than judged.
+flow collection treated as continuations rather than judged. Since 2026-08-06
+the token palette is derived from the active `ColorScheme` instead of being two
+hardcoded tables: hues stay canonical (green comments, red errors — the
+convention is the point), the scheme supplies a 12% tint toward its primary,
+and `invalid`, `punctuation` and `text` come from the scheme's roles outright.
+`MarkupStyling` now takes a `ColorScheme` everywhere it used to take a
+`Brightness`, which also themes the fold guides, the collapsed-row rule and the
+matched-pair wash.
 
 Three notes for the next change in this area:
 
@@ -76,16 +83,7 @@ behaviours it was pointed at: Alt+0/Alt+1..8 never reached the fold commands,
 the status-bar picker's Auto-detect entry could never be chosen, and the status
 bar overflowed by 97px as soon as text was selected. All three had shipped.
 
-- [ ] **The token palette is hardcoded** — the one item left here, and it needs a
-      decision before any code. `MarkupStyling.colorFor`
-      (`lib/markup_styling.dart`) holds a light and a dark colour per token
-      kind, following VS Code's convention. That is a defensible default, not
-      a defect, so "fix" could mean either of two quite different things:
-      derive the palette from the active `ColorScheme` (automatic, but the
-      accepted syntax-colour conventions do not survive being derived), or add
-      named themes the user picks and stores in the `settings` table (more
-      work, and the thing people actually ask for). Worth choosing
-      deliberately rather than drifting into the first one.
+Nothing outstanding here. Named syntax themes are deferred to §2.
 
 ---
 
@@ -153,6 +151,17 @@ These larger features were scoped out during the original find/replace design.
       other than clicking can leave the highlighted tab off-screen. A
       `ScrollController` with `Scrollable.ensureVisible` on activation is the
       minimum; chevron buttons at the ends are the Notepad++ shape.
+
+- [ ] **Named syntax themes.** Deferred from §0 on 2026-08-06 in favour of
+      deriving the palette, which is now done. This is the other half people
+      ask for: a set of named schemes (Monokai, Solarized, and so on) the user
+      picks and the app remembers. The pieces are in place — `MarkupStyling`
+      takes a `ColorScheme`, and the `settings` key/value table is where
+      `word_wrap` already lives — so the work is a picker, a stored key, and a
+      decision about whether a syntax theme also restyles the app chrome or
+      only the editor. Note that a named theme is exactly the case the derived
+      palette's contrast test exists to catch: a hand-authored scheme has no
+      obligation to keep its surface near-white or near-black.
 
 - [ ] **No Ctrl+Tab tab switcher.** There is no Tab binding at app level at all
       (`_handleGlobalShortcut`, `lib/main.dart`) — the only Tab handler is the

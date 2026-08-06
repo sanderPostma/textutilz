@@ -2063,7 +2063,7 @@ class CustomEditorState extends State<CustomEditor> {
                     textColor: Theme.of(context).brightness == Brightness.light
                         ? Colors.black
                         : Colors.white,
-                    brightness: Theme.of(context).brightness,
+                    scheme: Theme.of(context).colorScheme,
                     markupTokensFor: _markupTokensFor,
                     markupPair: _markupPair,
                     diagnostics: widget.diagnostics,
@@ -2131,7 +2131,11 @@ class EditorPainter extends CustomPainter {
   final String Function(int) getLineText;
   final bool caretOn;
   final Color textColor;
-  final Brightness brightness;
+
+  /// The active colour scheme. The painter takes the whole scheme rather than
+  /// a [Brightness] because the syntax palette is derived from it — see
+  /// [MarkupStyling.colorFor].
+  final ColorScheme scheme;
 
   /// Syntax tokens for a row range, straight from the Rust lexer. Called once
   /// per paint for the visible rows only; null for a plain-text document.
@@ -2196,7 +2200,7 @@ class EditorPainter extends CustomPainter {
     required this.getLineText,
     required this.caretOn,
     required this.textColor,
-    required this.brightness,
+    required this.scheme,
     this.markupTokensFor,
     this.markupPair,
     this.diagnostics = const [],
@@ -2414,7 +2418,7 @@ class EditorPainter extends CustomPainter {
     // rather than replacing it.
     final pair = markupPair;
     if (pair != null) {
-      final wash = Paint()..color = MarkupStyling.matchHighlight(brightness);
+      final wash = Paint()..color = MarkupStyling.matchHighlight(scheme);
       void washDelimiter(int row, int col, int len) {
         if (len == 0 || foldMap.isHidden(row)) return;
         final slot = foldMap.docToDisplay(row);
@@ -2472,7 +2476,7 @@ class EditorPainter extends CustomPainter {
               line: line,
               tokens: rowTokens,
               baseStyle: baseStyle,
-              brightness: brightness,
+              scheme: scheme,
             );
 
       textPainter.layout();
@@ -2487,7 +2491,7 @@ class EditorPainter extends CustomPainter {
           Offset(from, y),
           Offset(from + size.width, y),
           Paint()
-            ..color = MarkupStyling.collapsedRule(brightness)
+            ..color = MarkupStyling.collapsedRule(scheme)
             ..strokeWidth = 1.0,
         );
       }
@@ -2502,7 +2506,7 @@ class EditorPainter extends CustomPainter {
         final endRow = diagnostic.endRow;
         final color = MarkupStyling.diagnosticUnderline(
           diagnostic.severity,
-          brightness,
+          scheme,
         );
         for (int row = startRow; row <= endRow; row++) {
           if (foldMap.isHidden(row)) continue;
@@ -2587,7 +2591,7 @@ class EditorPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       final foldStarts = {for (final f in folds) f.startRow: f};
-      final guideColor = MarkupStyling.foldGuide(brightness);
+      final guideColor = MarkupStyling.foldGuide(scheme);
 
       for (int slot = firstSlot; slot < lastSlot; slot++) {
         final int i = docOf(slot);

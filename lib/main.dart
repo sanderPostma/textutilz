@@ -2226,9 +2226,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                                                       tokens:
                                                           tokens.first.tokens,
                                                       baseStyle: textStyle,
-                                                      brightness: Theme.of(
+                                                      scheme: Theme.of(
                                                         context,
-                                                      ).brightness,
+                                                      ).colorScheme,
                                                     );
 
                                               if (!_showLineNumbers) {

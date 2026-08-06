@@ -13,6 +13,17 @@ import 'package:textutilz/tool_bar.dart';
 /// is checked here is the part that is genuinely Dart: that token spans become
 /// the right [TextSpan]s, that the panels expose the right operations, and that
 /// results cross the bridge intact.
+/// The two schemes the app itself builds, so the palette is exercised against
+/// real Material schemes rather than hand-picked colours.
+final lightScheme = ColorScheme.fromSeed(
+  seedColor: Colors.indigo,
+  brightness: Brightness.light,
+);
+final darkScheme = ColorScheme.fromSeed(
+  seedColor: Colors.indigo,
+  brightness: Brightness.dark,
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -46,7 +57,7 @@ void main() {
         line: 'hello',
         tokens: const [],
         baseStyle: const TextStyle(fontSize: 12),
-        brightness: Brightness.light,
+        scheme: lightScheme,
       );
       expect(span.text, 'hello');
       expect(span.children, isNull);
@@ -61,7 +72,7 @@ void main() {
           StructuredToken(start: 6, end: 7, kind: StructuredTokenKind.number),
         ],
         baseStyle: const TextStyle(fontSize: 12),
-        brightness: Brightness.light,
+        scheme: lightScheme,
       );
       // Every character of the row survives, in order.
       expect(span.children!.map((c) => (c as TextSpan).text).join(), line);
@@ -81,16 +92,104 @@ void main() {
           StructuredToken(start: 1, end: 99, kind: StructuredTokenKind.str),
         ],
         baseStyle: const TextStyle(fontSize: 12),
-        brightness: Brightness.light,
+        scheme: lightScheme,
       );
       expect(span.children!.map((c) => (c as TextSpan).text).join(), 'ab');
+    });
+
+    /// WCAG contrast ratio, duplicated here on purpose: the production copy is
+    /// private, and a test that called it could not catch it being wrong.
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      final hi = la > lb ? la : lb;
+      final lo = la > lb ? lb : la;
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    test('every token kind is legible on the surface it is painted on', () {
+      // The point of deriving the palette: a fixed colour is only right for
+      // the background it was chosen against.
+      for (final scheme in [lightScheme, darkScheme]) {
+        for (final kind in StructuredTokenKind.values) {
+          final ratio = contrast(
+            MarkupStyling.colorFor(kind, scheme),
+            scheme.surface,
+          );
+          expect(
+            ratio,
+            greaterThanOrEqualTo(4.5),
+            reason: '$kind on ${scheme.brightness} surface is $ratio:1',
+          );
+        }
+      }
+    });
+
+    test('and on the editor background the app actually paints', () {
+      // `scaffoldBackgroundColor` is set independently of the scheme
+      // (`lib/main.dart`), so it is a second background the palette has to
+      // survive. Kept as its own test because it is the one that breaks if
+      // someone re-themes the editor without thinking about the tokens.
+      for (final (scheme, background) in [
+        (lightScheme, Colors.white),
+        (darkScheme, const Color(0xFF1E1E1E)),
+      ]) {
+        for (final kind in StructuredTokenKind.values) {
+          expect(
+            contrast(MarkupStyling.colorFor(kind, scheme), background),
+            greaterThanOrEqualTo(4.5),
+            reason: '$kind on $background',
+          );
+        }
+      }
+    });
+
+    test('the palette follows the theme seed', () {
+      // Not a repaint of the same colours: a different seed has to move them,
+      // or "derived" would mean nothing.
+      final teal = ColorScheme.fromSeed(
+        seedColor: Colors.teal,
+        brightness: Brightness.light,
+      );
+      final moved = StructuredTokenKind.values
+          .where(
+            (k) =>
+                MarkupStyling.colorFor(k, lightScheme) !=
+                MarkupStyling.colorFor(k, teal),
+          )
+          .length;
+      expect(
+        moved,
+        greaterThan(StructuredTokenKind.values.length ~/ 2),
+        reason: 'most kinds should shift with the seed',
+      );
+    });
+
+    test('but a comment stays green and an error stays red', () {
+      // The reason hues are not derived. A seeded palette that recoloured
+      // these would be following the theme at the cost of the convention every
+      // editor shares.
+      for (final seed in [Colors.indigo, Colors.teal, Colors.pink]) {
+        final scheme = ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: Brightness.dark,
+        );
+        final comment = HSLColor.fromColor(
+          MarkupStyling.colorFor(StructuredTokenKind.comment, scheme),
+        );
+        expect(
+          comment.hue,
+          inInclusiveRange(70, 170),
+          reason: 'comment should still read as green under $seed',
+        );
+      }
     });
 
     test('light and dark palettes differ for every kind', () {
       for (final kind in StructuredTokenKind.values) {
         expect(
-          MarkupStyling.colorFor(kind, Brightness.light),
-          isNot(MarkupStyling.colorFor(kind, Brightness.dark)),
+          MarkupStyling.colorFor(kind, lightScheme),
+          isNot(MarkupStyling.colorFor(kind, darkScheme)),
           reason: '$kind should be legible in both themes',
         );
       }

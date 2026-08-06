@@ -152,7 +152,7 @@ class _ValidationResultsPanelState extends State<ValidationResultsPanel> {
                   color: hasProblems
                       ? MarkupStyling.diagnosticUnderline(
                           StructuredSeverity.error,
-                          brightness,
+                          scheme,
                         )
                       : scheme.primary,
                 ),
@@ -272,7 +272,7 @@ class _ValidationResultsPanelState extends State<ValidationResultsPanel> {
                 size: 14,
                 color: MarkupStyling.diagnosticUnderline(
                   diagnostic.severity,
-                  brightness,
+                  scheme,
                 ),
               ),
               const SizedBox(width: 8),
