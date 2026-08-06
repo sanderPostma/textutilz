@@ -33,6 +33,10 @@ dialects at once; the JSON bar's JSON5 toggle writes the pin.
 `EditSession::detect_markup_language` applies the precedence (pin beats every
 detection signal) so colouring, folding, comment syntax, the Tools menu, the
 status bar and validation cannot disagree about what a document is.
+Since 2026-08-06 also a lexed-row window cached on `EditSession`, which took
+colouring a Read/Tail viewport from 5.3 ms per frame to 0.48 ms; XML DOCTYPE
+internal subsets scanned as one declaration; and YAML rows continuing an open
+flow collection treated as continuations rather than judged.
 
 Three notes for the next change in this area:
 
@@ -51,70 +55,28 @@ Three notes for the next change in this area:
    document revision or the language changes, so a field added to it is
    invalidated correctly with no new code — which is how the token window
    avoids having an invalidation bug to get wrong.
+4. There is a timing test for the whole-document pass, kept `#[ignore]`d
+   because it measures rather than asserts and means nothing in a debug build:
+   `cargo test --release -- --ignored --nocapture markup::cost`. Valid JSON
+   currently costs ~0.9 µs/row, linear, against a `MAX_ANALYSIS_ROWS` cap of
+   100k — so the worst pass is ~150 ms, once per 2 s idle pause. Re-run it if
+   a lexer grows a second pass over the rows.
 
-Since 2026-08-06 there is also an **app-shell harness** (`test/app_shell.dart`),
-which pumps the real `MyApp` against a seeded temp session and made the two
-"needs a `_TextEditorState` harness" items testable. It found two live bugs the
-moment it existed — Alt+0/Alt+1..8 never reached the fold commands at all, and
-the picker's Auto-detect entry could never be chosen — so treat anything else
-still marked "manual check" as unverified rather than working. Read its doc
-comment before writing shell tests: the surface must be sized to at least the
-runner's 980px minimum, and the store must be opened through `AppStore.openAt`
-so a test never touches the real session.
+Since 2026-08-06 there is an **app-shell harness** (`test/app_shell.dart`) that
+pumps the real `MyApp` against a seeded temp session, and it is how anything
+living on the private `_TextEditorState` gets tested — the fold keys, the
+status-bar picker, the docked-bar behaviours in §1. Read its doc comment first:
+the surface must be sized to at least the runner's 980px minimum, and the store
+must be opened through `AppStore.openAt` so a test never touches the real
+session.
 
-Since 2026-08-06 the harness also covers §1's three formerly untested docked-bar
-behaviours (`test/shell_tool_bar_test.dart`), and found a third live bug on the
-way: the status bar overflowed by 97px at the app's own 1000px default width as
-soon as text was selected, because the `Sel: n | n` segment appears without any
-width threshold accounting for it. The row is now a reversed horizontal
-`SingleChildScrollView`, so it stays pinned right and degrades by scrolling
-rather than by painting a stripe.
+**Anything still marked "manual check" should be assumed broken until a test
+says otherwise.** The harness found three live bugs in the first five
+behaviours it was pointed at: Alt+0/Alt+1..8 never reached the fold commands,
+the status-bar picker's Auto-detect entry could never be chosen, and the status
+bar overflowed by 97px as soon as text was selected. All three had shipped.
 
-Four of the five items below were closed on 2026-08-06 by measuring them
-rather than by assuming; what is left is one that needs a decision, not code.
-
-- [x] **Auto-validation runs the full document pass** — measured, and it is
-      not a problem. `markup::cost::whole_document_pass_timing` (an `#[ignore]`d
-      timing test; `cargo test --release -- --ignored --nocapture markup::cost`)
-      puts valid JSON at ~0.9 µs/row, linear: 1 ms at 1k rows, 9 ms at 10k,
-      73 ms at 50k, and the `MAX_ANALYSIS_ROWS` cap cuts in at 100k. So the
-      worst pass the app can run is ~150 ms, once per 2 s idle pause. Re-run
-      the test if the lexers grow a second pass over the rows.
-
-- [x] **YAML autodetection: the flow-collection half is fixed.** A row
-      continuing an open `[`/`{` (`hosts: [alpha,` / `beta]`) is now skipped
-      instead of judged, via `flow_delta` in `rust/src/markup/language.rs`,
-      which ignores quoted text and `#` comments.
-      The other half — a top-level sequence with no `---` marker (`- a\n- b`)
-      reading as plain text — is **not fixable and has been closed as such**.
-      Those two lines are equally a Markdown bullet list; nothing in the text
-      tells them apart. Plain text is the safe side of the tie, and the
-      status-bar format pin now makes being wrong cheap to correct.
-
-- [x] **Read and Tail called the lexer once per row build** — this one was
-      real, and much worse than the note claimed. The cost was never the FFI
-      crossing: `markup_tokens` resumes from the nearest checkpoint, so a
-      one-row request re-lexes up to `CHECKPOINT_ROWS` (128) rows to reach it.
-      A 50-row viewport therefore did ~64× the necessary lexing — **measured
-      at 5.3 ms per frame against a release build**, a third of a 60 Hz frame
-      budget, purely to colour what was on screen.
-      Fixed in Rust rather than Dart, so every caller benefits and the UI stays
-      thin: `EditSession` now keeps a `TokenWindow` of the last
-      `TOKEN_WINDOW_ROWS` (512) rows lexed, aligned to a checkpoint and started
-      slightly before the request so scrolling up hits too. Requests larger
-      than the window bypass it — they already amortise the warm-up. The window
-      lives inside `MarkupCache`, so the existing document-revision and
-      language checks invalidate it for free. Same measurement after: **0.48 ms
-      per frame**, 11× better.
-
-- [x] **XML DOCTYPE with an internal subset** — fixed. `scan_doctype`
-      (`rust/src/markup/xml.rs`) tracks the `[ ... ]` block, across rows, so
-      the `>` of an inner `<!ENTITY>` no longer ends the declaration and
-      strands the rest of the subset as element content. That also mattered
-      beyond colouring: the stranded rows lexed as `Invalid`, and
-      `looks_like_xml` rejects a sample with too many of those.
-
-- [ ] **The token palette is hardcoded** — the one item left, and it needs a
+- [ ] **The token palette is hardcoded** — the one item left here, and it needs a
       decision before any code. `MarkupStyling.colorFor`
       (`lib/markup_styling.dart`) holds a light and a dark colour per token
       kind, following VS Code's convention. That is a defensible default, not
@@ -293,15 +255,11 @@ Treat "the tests pass" with more suspicion than usual in this area.
 
 ---
 
-## 6. Housekeeping
+## 6. Standing notes
 
-- [x] **No smoke test for the app shell.** Covered incidentally:
-      `test/app_shell.dart` pumps the real `MyApp` and every test in
-      `test/fold_keys_test.dart` and `test/status_bar_picker_test.dart` fails
-      if the shell cannot build. The stock counter-app `test/widget_test.dart`
-      that used to occupy this slot stays deleted.
+Not tasks — things the next person needs to know before they lose an hour.
 
-- [ ] **Flutter test hazard, documented for whoever writes the next widget
+- **Flutter test hazard, documented for whoever writes the next widget
       test:** awaiting a Rust FFI call directly inside a `testWidgets` body
       **hangs forever** — the body runs in a `FakeAsync` zone whose clock never
       advances the real cross-isolate work. Use `tester.runAsync` for the async
@@ -309,7 +267,7 @@ Treat "the tests pass" with more suspicion than usual in this area.
       that exercise widget behaviour. See the comments in
       `test/find_panel_layout_test.dart`.
 
-- [ ] **Dart tests need the Rust library on the path.** The cargo target
+- **Dart tests need the Rust library on the path.** The cargo target
       directory is `~/.cargo/target`, *not* `rust/target`:
       ```
       cd rust && cargo build && cd .. && \
@@ -318,6 +276,3 @@ Treat "the tests pass" with more suspicion than usual in this area.
       Without it, anything calling `RustLib.init()` fails with "Failed to load
       dynamic library". Re-run `cargo build` after any Rust change or the tests
       exercise a stale library.
-
-- [x] **`master` is 29 commits ahead of `origin/master`** — pushed 2026-08-06,
-      along with `feature/docked-tool-bars`; both are at the same commit.
