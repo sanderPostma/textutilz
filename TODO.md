@@ -134,19 +134,19 @@ the way and are worth knowing about: the editor swallowed Ctrl+Tab as an indent,
 and it swallowed Escape entirely — which had also been quietly breaking
 Escape-to-close-a-docked-bar in Edit mode.
 
+Also done 2026-08-07: window geometry is persisted to the `settings` table.
+The judgement about whether a stored geometry is still safe to apply lives in
+`rust/src/api/window.rs` — too small, too large for this screen, on a monitor
+that is no longer plugged in — with the rule being *reachability* rather than
+containment: a window may hang off an edge, but not so far that there is
+nothing left to grab, and a negative `y` is never restored because the title
+bar is what went missing. Two platform caveats are in the code: Wayland ignores
+programmatic positioning entirely, so only size and maximised state restore
+there; and a maximized window's bounds are the maximized ones, so the save path
+keeps the previous size and updates only the flag.
+
 - [ ] **Find in Files / Find in Projects** — directory-tree search. Large,
       separate feature; needs a results pane and background scanning.
-
-- [ ] **Window size and position are not persisted.** The GTK runner opens at a
-      hardcoded `gtk_window_set_default_size(window, 1000, 600)`
-      (`linux/runner/my_application.cc:59`) every launch, and nothing reads or
-      writes geometry. The `settings` key/value table already exists and is the
-      natural home — the same place `word_wrap` is kept. Needs care on two
-      points: a restored position can land off-screen when a monitor is
-      unplugged, so it has to be validated against the current screen; and
-      Wayland ignores programmatic window positioning entirely, so this is
-      size-and-maximised-state on Wayland and full geometry on X11. Note the
-      980px minimum width already enforced in the runner.
 
 - [ ] **Named syntax themes.** Deferred from §0 on 2026-08-06 in favour of
       deriving the palette, which is now done. This is the other half people

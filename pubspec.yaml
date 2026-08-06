@@ -38,6 +38,10 @@ dependencies:
   rust_lib_textutilz:
     path: rust_builder
   window_manager: ^0.5.2
+  # Already present transitively via window_manager; declared directly because
+  # restoring a window position needs the current display's size to validate
+  # against, and window_manager does not expose it.
+  screen_retriever: ^0.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

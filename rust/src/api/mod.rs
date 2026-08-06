@@ -8,4 +8,5 @@ pub mod mime_tools;
 pub mod paths;
 pub mod search;
 pub mod store;
+pub mod window;
 pub mod structured;

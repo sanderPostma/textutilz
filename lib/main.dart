@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:async';
 import 'dart:io';
@@ -8,6 +9,7 @@ import 'package:textutilz/src/rust/api/file_manager.dart';
 import 'package:textutilz/src/rust/api/edit_session.dart';
 import 'package:textutilz/src/rust/api/hex_session.dart' show isBinaryFile;
 import 'package:textutilz/src/rust/api/store.dart';
+import 'package:textutilz/src/rust/api/window.dart';
 import 'package:textutilz/src/rust/api/paths.dart' as rust_paths;
 import 'package:textutilz/src/rust/frb_generated.dart';
 import 'editor.dart';
@@ -69,11 +71,54 @@ Future<void> main() async {
   }
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await _restoreWindowGeometry(windowOptions);
     await windowManager.show();
     await windowManager.focus();
   });
 
   runApp(const MyApp());
+}
+
+/// The `settings` key the window's geometry is stored under.
+const String kWindowGeometrySetting = 'window_geometry';
+
+/// Put the window back where it was, if that is still a sensible place.
+///
+/// The judgement — too small, too big, off an unplugged monitor — is Rust's
+/// (`fit_window_geometry`); this only reads the display, asks, and applies.
+/// Silent on every failure: a window that will not restore is a nuisance, but
+/// a launch that fails because of one is a great deal worse.
+Future<void> _restoreWindowGeometry(WindowOptions options) async {
+  final store = appStore;
+  if (store == null) return;
+  try {
+    final stored = store.getSetting(key: kWindowGeometrySetting);
+    if (stored == null) return;
+    final geometry = parseWindowGeometry(value: stored);
+    if (geometry == null) return;
+
+    final display = await screenRetriever.getPrimaryDisplay();
+    final fitted = fitWindowGeometry(
+      geometry: geometry,
+      screenWidth: display.size.width,
+      screenHeight: display.size.height,
+      minWidth: options.minimumSize?.width ?? 0,
+      minHeight: options.minimumSize?.height ?? 0,
+    );
+
+    await windowManager.setSize(Size(fitted.width, fitted.height));
+    if (fitted.x != null && fitted.y != null) {
+      // Wayland ignores programmatic positioning outright, so this is a
+      // best-effort call: on Wayland the size and maximised state restore and
+      // the position quietly does not.
+      await windowManager.setPosition(Offset(fitted.x!, fitted.y!));
+    } else {
+      await windowManager.center();
+    }
+    if (fitted.maximized) await windowManager.maximize();
+  } catch (e) {
+    debugPrint('window geometry restore failed: $e');
+  }
 }
 
 /// Rust-owned session store (SQLite), opened once in [main].
@@ -804,6 +849,8 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     _filePollTimer?.cancel();
     _autoValidateDebounce?.cancel();
     _midnightTimer?.cancel();
+    _geometryDebounce?.cancel();
+    _tabStripController.dispose();
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     windowManager.removeListener(this);
     undoCoalescingNotifier.removeListener(_onUndoCoalescingChanged);
@@ -838,11 +885,77 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     }
   }
 
-  @override
-  void onWindowMaximize() => setState(() => _isMaximized = true);
+  /// Coalesces the burst of move/resize callbacks a single drag produces into
+  /// one store write.
+  Timer? _geometryDebounce;
+
+  /// Remember where the window is, unless it is maximized or minimized — in
+  /// those states the reported bounds are the maximized ones, and saving them
+  /// would lose the size to restore *to* when the user un-maximizes next run.
+  void _saveWindowGeometry() {
+    _geometryDebounce?.cancel();
+    _geometryDebounce = Timer(const Duration(milliseconds: 400), () async {
+      final store = appStore;
+      if (store == null) return;
+      try {
+        final maximized = await windowManager.isMaximized();
+        if (maximized || await windowManager.isMinimized()) {
+          // Record only the flag; the previous size stays as it was.
+          final stored = store.getSetting(key: kWindowGeometrySetting);
+          final previous = stored == null
+              ? null
+              : parseWindowGeometry(value: stored);
+          if (previous == null) return;
+          store.setSetting(
+            key: kWindowGeometrySetting,
+            value: encodeWindowGeometry(
+              geometry: WindowGeometry(
+                x: previous.x,
+                y: previous.y,
+                width: previous.width,
+                height: previous.height,
+                maximized: maximized,
+              ),
+            ),
+          );
+          return;
+        }
+        final bounds = await windowManager.getBounds();
+        store.setSetting(
+          key: kWindowGeometrySetting,
+          value: encodeWindowGeometry(
+            geometry: WindowGeometry(
+              x: bounds.left,
+              y: bounds.top,
+              width: bounds.width,
+              height: bounds.height,
+              maximized: false,
+            ),
+          ),
+        );
+      } catch (e) {
+        debugPrint('window geometry save failed: $e');
+      }
+    });
+  }
 
   @override
-  void onWindowUnmaximize() => setState(() => _isMaximized = false);
+  void onWindowMoved() => _saveWindowGeometry();
+
+  @override
+  void onWindowResized() => _saveWindowGeometry();
+
+  @override
+  void onWindowMaximize() {
+    setState(() => _isMaximized = true);
+    _saveWindowGeometry();
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    setState(() => _isMaximized = false);
+    _saveWindowGeometry();
+  }
 
   @override
   void onWindowClose() async {

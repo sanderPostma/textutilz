@@ -8,8 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'search.dart';
 import 'structured.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `markup_checkpoints`, `markup_rows`, `new`, `prepare_edit`, `record`, `reset_after_save`, `scope_row_bounds`, `span_in_scope`, `u16_len`, `u16_to_byte`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MarkupCache`, `Op`, `UndoEntry`
+// These functions are ignored because they are not marked as `pub`: `apply`, `base_line`, `build_edits`, `do_delete`, `do_insert`, `expand_for_span`, `get_line_visual`, `get_logical`, `lex_range`, `markup_checkpoints`, `markup_rows`, `new`, `prepare_edit`, `record`, `reset_after_save`, `scope_row_bounds`, `span_in_scope`, `u16_len`, `u16_to_byte`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MarkupCache`, `Op`, `TokenWindow`, `UndoEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<EditSession>>
@@ -123,10 +123,15 @@ abstract class EditSession implements RustOpaqueInterface {
 
   /// Syntax tokens for the rows in `[from_row, to_row)`.
   ///
-  /// Only the requested rows are lexed. The state they start in comes from
-  /// the nearest stored checkpoint, warmed forward by at most
-  /// `CHECKPOINT_ROWS` rows — so scrolling to the middle of a large document
-  /// costs the same as scrolling to the top of it.
+  /// The state the rows start in comes from the nearest stored checkpoint,
+  /// warmed forward by at most `CHECKPOINT_ROWS` rows — so scrolling to the
+  /// middle of a large document costs the same as scrolling to the top of it.
+  ///
+  /// A request smaller than [`TOKEN_WINDOW_ROWS`] lexes a whole window
+  /// around it and keeps the result, because that warm-up is charged per
+  /// call: asking for one row at a time — which a `ListView.builder` does
+  /// naturally — otherwise pays it once per row. Larger requests are served
+  /// directly, since they already amortise it and are not worth the memory.
   List<StructuredRowTokens> markupTokens({
     required StructuredLanguage language,
     required BigInt fromRow,

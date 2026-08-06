@@ -17,6 +17,7 @@ import 'api/paths.dart';
 import 'api/search.dart';
 import 'api/store.dart';
 import 'api/structured.dart';
+import 'api/window.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -159,6 +160,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CommentStyle dco_decode_box_autoadd_comment_style(dynamic raw);
 
   @protected
+  double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
   MatchSpan dco_decode_box_autoadd_match_span(dynamic raw);
 
   @protected
@@ -175,6 +179,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt dco_decode_box_autoadd_usize(dynamic raw);
+
+  @protected
+  WindowGeometry dco_decode_box_autoadd_window_geometry(dynamic raw);
 
   @protected
   ByteRange dco_decode_byte_range(dynamic raw);
@@ -199,6 +206,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  FittedGeometry dco_decode_fitted_geometry(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -276,6 +286,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CaretPos? dco_decode_opt_box_autoadd_caret_pos(dynamic raw);
 
   @protected
+  double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
   SpanScope? dco_decode_opt_box_autoadd_span_scope(dynamic raw);
 
   @protected
@@ -288,6 +301,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_usize(dynamic raw);
+
+  @protected
+  WindowGeometry? dco_decode_opt_box_autoadd_window_geometry(dynamic raw);
 
   @protected
   SearchMode dco_decode_search_mode(dynamic raw);
@@ -345,6 +361,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt dco_decode_usize(dynamic raw);
+
+  @protected
+  WindowGeometry dco_decode_window_geometry(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -462,6 +481,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
   MatchSpan sse_decode_box_autoadd_match_span(SseDeserializer deserializer);
 
   @protected
@@ -482,6 +504,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_usize(SseDeserializer deserializer);
+
+  @protected
+  WindowGeometry sse_decode_box_autoadd_window_geometry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ByteRange sse_decode_byte_range(SseDeserializer deserializer);
@@ -506,6 +533,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  FittedGeometry sse_decode_fitted_geometry(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -597,6 +627,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CaretPos? sse_decode_opt_box_autoadd_caret_pos(SseDeserializer deserializer);
 
   @protected
+  double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
   SpanScope? sse_decode_opt_box_autoadd_span_scope(
     SseDeserializer deserializer,
   );
@@ -613,6 +646,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_usize(SseDeserializer deserializer);
+
+  @protected
+  WindowGeometry? sse_decode_opt_box_autoadd_window_geometry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SearchMode sse_decode_search_mode(SseDeserializer deserializer);
@@ -686,6 +724,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_usize(SseDeserializer deserializer);
+
+  @protected
+  WindowGeometry sse_decode_window_geometry(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -826,6 +867,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_match_span(
     MatchSpan self,
     SseSerializer serializer,
@@ -859,6 +903,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_usize(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_window_geometry(
+    WindowGeometry self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_byte_range(ByteRange self, SseSerializer serializer);
 
   @protected
@@ -890,6 +940,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_fitted_geometry(
+    FittedGeometry self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -1012,6 +1068,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_span_scope(
     SpanScope? self,
     SseSerializer serializer,
@@ -1031,6 +1090,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_usize(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_window_geometry(
+    WindowGeometry? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_search_mode(SearchMode self, SseSerializer serializer);
@@ -1124,6 +1189,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_window_geometry(
+    WindowGeometry self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class

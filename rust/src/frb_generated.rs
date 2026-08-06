@@ -42,7 +42,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1073778854;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 317178765;
 
 // Section: executor
 
@@ -4231,6 +4231,37 @@ fn wire__crate__api__jwt__encode_jwt_impl(
         },
     )
 }
+fn wire__crate__api__window__encode_window_geometry_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "encode_window_geometry",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_geometry = <crate::api::window::WindowGeometry>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::window::encode_window_geometry(api_geometry))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__edit_ops__eol_to_space_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4292,6 +4323,46 @@ fn wire__crate__api__structured__escape_structured_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::api::structured::escape_structured(api_text, api_language)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__window__fit_window_geometry_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "fit_window_geometry",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_geometry = <crate::api::window::WindowGeometry>::sse_decode(&mut deserializer);
+            let api_screen_width = <f64>::sse_decode(&mut deserializer);
+            let api_screen_height = <f64>::sse_decode(&mut deserializer);
+            let api_min_width = <f64>::sse_decode(&mut deserializer);
+            let api_min_height = <f64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::window::fit_window_geometry(
+                    api_geometry,
+                    api_screen_width,
+                    api_screen_height,
+                    api_min_width,
+                    api_min_height,
+                ))?;
                 Ok(output_ok)
             })())
         },
@@ -4428,6 +4499,37 @@ fn wire__crate__api__hex_session__is_binary_file_impl(
                     Ok(output_ok)
                 })(),
             )
+        },
+    )
+}
+fn wire__crate__api__window__parse_window_geometry_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "parse_window_geometry",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_value = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::window::parse_window_geometry(api_value))?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -5711,6 +5813,24 @@ impl SseDecode for f64 {
     }
 }
 
+impl SseDecode for crate::api::window::FittedGeometry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_x = <Option<f64>>::sse_decode(deserializer);
+        let mut var_y = <Option<f64>>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_maximized = <bool>::sse_decode(deserializer);
+        return crate::api::window::FittedGeometry {
+            x: var_x,
+            y: var_y,
+            width: var_width,
+            height: var_height,
+            maximized: var_maximized,
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6022,6 +6142,17 @@ impl SseDecode for Option<crate::api::edit_session::CaretPos> {
     }
 }
 
+impl SseDecode for Option<f64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<f64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::search::SpanScope> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6064,6 +6195,19 @@ impl SseDecode for Option<usize> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<usize>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::window::WindowGeometry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::window::WindowGeometry>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -6348,6 +6492,24 @@ impl SseDecode for usize {
     }
 }
 
+impl SseDecode for crate::api::window::WindowGeometry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_x = <f64>::sse_decode(deserializer);
+        let mut var_y = <f64>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_maximized = <bool>::sse_decode(deserializer);
+        return crate::api::window::WindowGeometry {
+            x: var_x,
+            y: var_y,
+            width: var_width,
+            height: var_height,
+            maximized: var_maximized,
+        };
+    }
+}
+
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -6399,42 +6561,42 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__commands__command_registry_new_impl(port, ptr, rust_vec_len, data_len)
         }
         85 => wire__crate__api__edit_ops__convert_eol_impl(port, ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__edit_ops__eol_to_space_impl(port, ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__edit_ops__invert_case_impl(port, ptr, rust_vec_len, data_len),
-        96 => wire__crate__api__file_manager__pick_file_impl(port, ptr, rust_vec_len, data_len),
-        97 => {
+        91 => wire__crate__api__edit_ops__eol_to_space_impl(port, ptr, rust_vec_len, data_len),
+        96 => wire__crate__api__edit_ops__invert_case_impl(port, ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__file_manager__pick_file_impl(port, ptr, rust_vec_len, data_len),
+        100 => {
             wire__crate__api__file_manager__pick_save_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        98 => wire__crate__api__edit_ops__proper_case_impl(port, ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__edit_ops__random_case_impl(port, ptr, rust_vec_len, data_len),
-        104 => wire__crate__api__edit_ops__sentence_case_impl(port, ptr, rust_vec_len, data_len),
-        105 => {
+        101 => wire__crate__api__edit_ops__proper_case_impl(port, ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__edit_ops__random_case_impl(port, ptr, rust_vec_len, data_len),
+        107 => wire__crate__api__edit_ops__sentence_case_impl(port, ptr, rust_vec_len, data_len),
+        108 => {
             wire__crate__api__edit_ops__single_line_comment_impl(port, ptr, rust_vec_len, data_len)
         }
-        106 => wire__crate__api__edit_ops__single_line_uncomment_impl(
+        109 => wire__crate__api__edit_ops__single_line_uncomment_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        107 => wire__crate__api__edit_ops__space_to_tab_impl(port, ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__edit_ops__tab_to_space_impl(port, ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__edit_ops__toggle_single_line_comment_impl(
+        110 => wire__crate__api__edit_ops__space_to_tab_impl(port, ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__edit_ops__tab_to_space_impl(port, ptr, rust_vec_len, data_len),
+        117 => wire__crate__api__edit_ops__toggle_single_line_comment_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        116 => wire__crate__api__edit_ops__trim_both_impl(port, ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__edit_ops__trim_both_and_eol_to_space_impl(
+        119 => wire__crate__api__edit_ops__trim_both_impl(port, ptr, rust_vec_len, data_len),
+        120 => wire__crate__api__edit_ops__trim_both_and_eol_to_space_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        118 => wire__crate__api__edit_ops__trim_leading_impl(port, ptr, rust_vec_len, data_len),
-        119 => wire__crate__api__edit_ops__trim_trailing_impl(port, ptr, rust_vec_len, data_len),
-        120 => wire__crate__api__search__unescape_extended_impl(port, ptr, rust_vec_len, data_len),
+        121 => wire__crate__api__edit_ops__trim_leading_impl(port, ptr, rust_vec_len, data_len),
+        122 => wire__crate__api__edit_ops__trim_trailing_impl(port, ptr, rust_vec_len, data_len),
+        123 => wire__crate__api__search__unescape_extended_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6660,37 +6822,40 @@ fn pde_ffi_dispatcher_sync_impl(
             data_len,
         ),
         89 => wire__crate__api__jwt__encode_jwt_impl(ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__structured__escape_structured_impl(ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__structured__format_structured_impl(ptr, rust_vec_len, data_len),
-        93 => wire__crate__api__commands__get_command_registry_impl(ptr, rust_vec_len, data_len),
-        95 => wire__crate__api__hex_session__is_binary_file_impl(ptr, rust_vec_len, data_len),
-        99 => wire__crate__api__mime_tools__qp_decode_impl(ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__mime_tools__qp_encode_impl(ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__mime_tools__saml_decode_impl(ptr, rust_vec_len, data_len),
-        103 => wire__crate__api__paths__scratch_dir_impl(ptr, rust_vec_len, data_len),
-        108 => {
+        90 => wire__crate__api__window__encode_window_geometry_impl(ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__structured__escape_structured_impl(ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__window__fit_window_geometry_impl(ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__structured__format_structured_impl(ptr, rust_vec_len, data_len),
+        95 => wire__crate__api__commands__get_command_registry_impl(ptr, rust_vec_len, data_len),
+        97 => wire__crate__api__hex_session__is_binary_file_impl(ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__window__parse_window_geometry_impl(ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__mime_tools__qp_decode_impl(ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__mime_tools__qp_encode_impl(ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__mime_tools__saml_decode_impl(ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__paths__scratch_dir_impl(ptr, rust_vec_len, data_len),
+        111 => {
             wire__crate__api__structured__structured_comment_style_impl(ptr, rust_vec_len, data_len)
         }
-        109 => wire__crate__api__structured__structured_language_from_id_impl(
+        112 => wire__crate__api__structured__structured_language_from_id_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        110 => {
+        113 => {
             wire__crate__api__structured__structured_language_id_impl(ptr, rust_vec_len, data_len)
         }
-        111 => wire__crate__api__structured__structured_language_label_impl(
+        114 => wire__crate__api__structured__structured_language_label_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        112 => wire__crate__api__structured__structured_languages_impl(ptr, rust_vec_len, data_len),
-        115 => wire__crate__api__structured__tokenize_structured_impl(ptr, rust_vec_len, data_len),
-        121 => wire__crate__api__structured__unescape_structured_impl(ptr, rust_vec_len, data_len),
-        122 => wire__crate__api__mime_tools__url_decode_impl(ptr, rust_vec_len, data_len),
-        123 => wire__crate__api__mime_tools__url_encode_impl(ptr, rust_vec_len, data_len),
-        124 => wire__crate__api__search__validate_query_impl(ptr, rust_vec_len, data_len),
-        125 => wire__crate__api__structured__validate_structured_impl(ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__structured__structured_languages_impl(ptr, rust_vec_len, data_len),
+        118 => wire__crate__api__structured__tokenize_structured_impl(ptr, rust_vec_len, data_len),
+        124 => wire__crate__api__structured__unescape_structured_impl(ptr, rust_vec_len, data_len),
+        125 => wire__crate__api__mime_tools__url_decode_impl(ptr, rust_vec_len, data_len),
+        126 => wire__crate__api__mime_tools__url_encode_impl(ptr, rust_vec_len, data_len),
+        127 => wire__crate__api__search__validate_query_impl(ptr, rust_vec_len, data_len),
+        128 => wire__crate__api__structured__validate_structured_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6917,6 +7082,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::store::DocRecord>
     for crate::api::store::DocRecord
 {
     fn into_into_dart(self) -> crate::api::store::DocRecord {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::window::FittedGeometry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.x.into_into_dart().into_dart(),
+            self.y.into_into_dart().into_dart(),
+            self.width.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.maximized.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::window::FittedGeometry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::window::FittedGeometry>
+    for crate::api::window::FittedGeometry
+{
+    fn into_into_dart(self) -> crate::api::window::FittedGeometry {
         self
     }
 }
@@ -7366,6 +7555,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::mime_tools::UrlEncodeVariant>
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::window::WindowGeometry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.x.into_into_dart().into_dart(),
+            self.y.into_into_dart().into_dart(),
+            self.width.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.maximized.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::window::WindowGeometry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::window::WindowGeometry>
+    for crate::api::window::WindowGeometry
+{
+    fn into_into_dart(self) -> crate::api::window::WindowGeometry {
+        self
+    }
+}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -7545,6 +7758,17 @@ impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::window::FittedGeometry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<f64>>::sse_encode(self.x, serializer);
+        <Option<f64>>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.width, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <bool>::sse_encode(self.maximized, serializer);
     }
 }
 
@@ -7782,6 +8006,16 @@ impl SseEncode for Option<crate::api::edit_session::CaretPos> {
     }
 }
 
+impl SseEncode for Option<f64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <f64>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::search::SpanScope> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7818,6 +8052,16 @@ impl SseEncode for Option<usize> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <usize>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::window::WindowGeometry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::window::WindowGeometry>::sse_encode(value, serializer);
         }
     }
 }
@@ -8064,6 +8308,17 @@ impl SseEncode for usize {
             .cursor
             .write_u64::<NativeEndian>(self as _)
             .unwrap();
+    }
+}
+
+impl SseEncode for crate::api::window::WindowGeometry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.x, serializer);
+        <f64>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.width, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <bool>::sse_encode(self.maximized, serializer);
     }
 }
 
