@@ -57,6 +57,14 @@ comment before writing shell tests: the surface must be sized to at least the
 runner's 980px minimum, and the store must be opened through `AppStore.openAt`
 so a test never touches the real session.
 
+Since 2026-08-06 the harness also covers §1's three formerly untested docked-bar
+behaviours (`test/shell_tool_bar_test.dart`), and found a third live bug on the
+way: the status bar overflowed by 97px at the app's own 1000px default width as
+soon as text was selected, because the `Sel: n | n` segment appears without any
+width threshold accounting for it. The row is now a reversed horizontal
+`SingleChildScrollView`, so it stays pinned right and degrades by scrolling
+rather than by painting a stripe.
+
 - [ ] **Auto-validation runs the full document pass.** `markupAnalysis` is
       O(document); the 2 s idle debounce keeps a typing burst to one pass, but a
       large file still pays for the whole document on every pause. The
@@ -108,12 +116,16 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
   holds a fixed title per panel id (`lib/tool_bar.dart:43-51`). Fixing it
   means hoisting the decode flag out of `SingleMimeToolPanel`, which makes
   that widget half-controlled and `ToolBar` stateful.
-- **Three behaviours have no automated test** — `_openToolBar`'s early
-  return, the ViewMode retarget, and the live selection marker. The harness
-  they were waiting on now exists (`test/app_shell.dart`), so these are
-  writable; they simply have not been written. Given that the harness found
-  two real bugs in the first two behaviours it was pointed at, assume these
-  three are broken until a test says otherwise.
+- **The ribbon's menu table runs off the right edge.** `_buildMenuTable`
+  (`lib/menu_ribbon.dart`) is a bare `Row` of five intrinsic-width cards
+  inside a non-scrolling ribbon. Measured at the app's 1000px default width,
+  the Tools column's centre lands at x≈1131 — outside the window, so **the
+  MIME, JSON/YAML/XML, JWT and Hex entries cannot be clicked at all** unless
+  the user has widened the window. Search still reaches them (which is how
+  `test/shell_tool_bar_test.dart` opens a MIME bar), but the menu is the
+  advertised path. Widths are upper bounds — the widget-test font is
+  fixed-width — so measure in the running app before choosing between
+  wrapping the columns, scrolling them, or narrowing the cards.
 - **Manual GUI verification is still owed** for the docked-tool-bar spec's
   9-point checklist, including confirming that the find bar is pixel-identical
   to its pre-`DockedBar` appearance. The separate find/replace checklist has

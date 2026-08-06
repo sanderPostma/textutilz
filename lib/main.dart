@@ -2473,56 +2473,71 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                           margin: const EdgeInsets.symmetric(horizontal: 12),
                         );
 
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (w > 700) ...[
-                              _buildLanguagePicker(),
-                              sep,
-                            ],
-                            if (w > 600) ...[
-                              Text(
-                                'length: ?  lines: ${_activeTab?.lineCount ?? 0}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              sep,
-                            ],
-                            if (w > 200 && _activeTab != null) ...[
-                              ValueListenableBuilder<EditorStats>(
-                                valueListenable: _activeTab!.stats,
-                                builder: (context, stats, child) {
-                                  if (_activeTab?.mode == ViewMode.hex) {
-                                    final off = stats.row;
+                        // Scrollable, because the width thresholds below only
+                        // drop whole segments at hand-picked breakpoints and
+                        // cannot know how wide the remaining ones actually
+                        // render. Selecting text adds "Sel: n | n" to the
+                        // stats segment and overflowed the row by 97px at the
+                        // app's own 1000px default width — a red-and-yellow
+                        // stripe across the status bar, in the real app, on
+                        // nothing rarer than selecting a few lines. Reversed
+                        // so the row stays pinned to the right edge, which is
+                        // where it sat before, and so what scrolls out of
+                        // reach under pressure is the left-most segment.
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (w > 700) ...[_buildLanguagePicker(), sep],
+                              if (w > 600) ...[
+                                Text(
+                                  'length: ?  lines: ${_activeTab?.lineCount ?? 0}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                sep,
+                              ],
+                              if (w > 200 && _activeTab != null) ...[
+                                ValueListenableBuilder<EditorStats>(
+                                  valueListenable: _activeTab!.stats,
+                                  builder: (context, stats, child) {
+                                    if (_activeTab?.mode == ViewMode.hex) {
+                                      final off = stats.row;
+                                      return Text(
+                                        'Offset: 0x${off.toRadixString(16).toUpperCase()} ($off)  Bytes: ${stats.col}',
+                                        style: const TextStyle(fontSize: 12),
+                                      );
+                                    }
+                                    String sel = stats.selChars > 0
+                                        ? "  Sel: ${stats.selChars} | ${stats.selLines}"
+                                        : "";
                                     return Text(
-                                      'Offset: 0x${off.toRadixString(16).toUpperCase()} ($off)  Bytes: ${stats.col}',
+                                      'Ln: ${stats.row}  Col: ${stats.col}$sel',
                                       style: const TextStyle(fontSize: 12),
                                     );
-                                  }
-                                  String sel = stats.selChars > 0
-                                      ? "  Sel: ${stats.selChars} | ${stats.selLines}"
-                                      : "";
-                                  return Text(
-                                    'Ln: ${stats.row}  Col: ${stats.col}$sel',
-                                    style: const TextStyle(fontSize: 12),
-                                  );
-                                },
-                              ),
-                              sep,
+                                  },
+                                ),
+                                sep,
+                              ],
+                              if (w > 400) ...[
+                                const Text(
+                                  'Windows (CR LF)',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                sep,
+                                const Text(
+                                  'UTF-8',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                sep,
+                                const Text(
+                                  'INS',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ],
                             ],
-                            if (w > 400) ...[
-                              const Text(
-                                'Windows (CR LF)',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                              sep,
-                              const Text(
-                                'UTF-8',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                              sep,
-                              const Text('INS', style: TextStyle(fontSize: 12)),
-                            ],
-                          ],
+                          ),
                         );
                       },
                     ),
