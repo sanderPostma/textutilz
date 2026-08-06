@@ -91,24 +91,21 @@ Nothing outstanding here. Named syntax themes are deferred to §2.
 
 Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 
-- **The spec's vertical budget is not met.** Measured at 800px: `edit.blank`
-  163px, `edit.case`/`edit.comment` 129px, MIME bars 86px, one-row floor 71px
-  — against a promised ~52px one-row / ~84px two-row. These are upper bounds
-  (the widget-test font is fixed-width at ~1em/glyph; the real proportional
-  font should put `edit.blank` nearer 101–131px), but the target is still
-  missed. Two independent walls: the 71px floor is `DockedBar`'s own 40px
-  close `IconButton` plus the ~23px title tab, so reaching ~52px means
-  changing chrome the find bar shares; and `edit.blank`'s eight long labels
-  need ~4 wrap runs at 800px. `test/tool_bar_layout_test.dart` now pins all
-  15 bar heights with zero slack, so this cannot regress silently. The
-  structured bars are the tallest at 127px (JSON) and 115px (YAML, XML):
-  five operation buttons, the scope note, a divider and the auto-validate
-  switch need three runs at 800px.
-- **The MIME title tab is stale on Encode/Decode** — tap Decode and the tab
-  still reads "Base64 Encode"; only the Apply label updates. `ToolBar`
-  holds a fixed title per panel id (`lib/tool_bar.dart:43-51`). Fixing it
-  means hoisting the decode flag out of `SingleMimeToolPanel`, which makes
-  that widget half-controlled and `ToolBar` stateful.
+- **The spec's vertical budget is nearly met, and the rest is a design
+  choice.** `DockedBar`'s close button was Material's 40px square, which — not
+  the controls — set every one-row bar's height. Trimming it to 28px took the
+  one-row floor from 71px to **59px**, against a promised ~52px, and took 2px
+  off every other bar (`edit.blank` 163→161, `structured.json` 127→125). All
+  15 ceilings in `test/tool_bar_layout_test.dart` were re-measured, still with
+  zero slack.
+  The remaining 7px is the title band. It can go, but that is a decision about
+  what a docked bar *is* rather than a tuning exercise: the find bar passes
+  `title: null` and has no band, so the spec's 52px was measured on a bar with
+  no title in the first place. Two other figures are unchanged and unrelated to
+  the chrome: `edit.blank`'s eight long labels still need ~4 wrap runs at
+  800px, and the structured bars still need three. Note all these numbers are
+  upper bounds — the widget-test font is fixed-width at ~1em/glyph, roughly
+  double a real proportional font.
 - **The ribbon's menu table has no overflow behaviour** — `_buildMenuTable`
   (`lib/menu_ribbon.dart`) is a bare `Row` of five intrinsic-width cards in a
   non-scrolling ribbon, so a column that does not fit is simply unreachable.

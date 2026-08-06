@@ -56,6 +56,40 @@ void main() {
     expect(find.text('Base64 Encode'), findsOneWidget);
   });
 
+  testWidgets('the MIME title tab follows the Encode/Decode selector', (
+    tester,
+  ) async {
+    // The bug: the panel owned the decode flag, so tapping Decode changed the
+    // Apply label while the tab above still read "Base64 Encode".
+    await tester.pumpWidget(host('mime.base64.encode'));
+    expect(find.text('Base64 Encode'), findsOneWidget);
+
+    await tester.tap(find.text('Decode'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Base64 Decode'), findsOneWidget);
+    expect(
+      find.text('Base64 Encode'),
+      findsNothing,
+      reason: 'the tab and the Apply button must name the same operation',
+    );
+  });
+
+  testWidgets('and a decode choice does not carry to the next tool', (
+    tester,
+  ) async {
+    // The bar is one widget reused across panel ids, so the flag has to be
+    // dropped when the docked tool changes or URL Encode would open on Decode.
+    await tester.pumpWidget(host('mime.base64.encode'));
+    await tester.tap(find.text('Decode'));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(host('mime.url.encode'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('URL Encode'), findsOneWidget);
+  });
+
   testWidgets('widest edit bar does not overflow across a width sweep', (
     tester,
   ) async {
@@ -111,29 +145,34 @@ void main() {
   /// The `mimeHasSelection: false` host is used deliberately: the
   /// "⚠️ Transforms the whole document." notice is the longer of the two.
   const heightCeilingsAt800 = <String, double>{
-    'edit.case': 129,
-    'edit.eol': 71,
+    'edit.case': 127,
+    'edit.eol': 59,
     // 8 long labels; this one is still the worst case by a wide margin.
-    'edit.blank': 163,
-    'edit.comment': 129,
-    'mime.base64.encode': 86,
-    'mime.base64.decode': 86,
-    'mime.qp.encode': 86,
-    'mime.qp.decode': 86,
-    'mime.url.encode': 118,
+    'edit.blank': 161,
+    'edit.comment': 127,
+    'mime.base64.encode': 84,
+    'mime.base64.decode': 84,
+    'mime.qp.encode': 84,
+    'mime.qp.decode': 84,
+    'mime.url.encode': 116,
     // Decode hides the RFC1738/Extended/Full selector, so this is shorter
-    // than url.encode. It was pinned at 118 with 32px of slack it never used.
-    'mime.url.decode': 86,
-    'mime.saml.decode': 88,
+    // than url.encode.
+    'mime.url.decode': 84,
+    'mime.saml.decode': 86,
     // The tabbed bar: a tab row plus the selected category's option run.
-    'mime': 119,
+    'mime': 117,
     // Five operation buttons, the scope note, a divider, and the auto-validate
     // switch do not fit on one run at 800px. JSON is the tallest because it
     // also carries the JSON5 dialect switch. These were 86px when the bar held
     // only Pretty-print and Compact.
-    'structured.json': 127,
-    'structured.yaml': 115,
-    'structured.xml': 115,
+    //
+    // Every figure here dropped on 2026-08-07, when DockedBar's close button
+    // was trimmed from Material's 40px square to 28px. One-row bars gained the
+    // most (71 to 59px) because the button, not the controls, had been setting
+    // their height; multi-row bars only lost the 2px of padding around it.
+    'structured.json': 125,
+    'structured.yaml': 113,
+    'structured.xml': 113,
   };
 
   Widget heightHost(String panelId) => MaterialApp(

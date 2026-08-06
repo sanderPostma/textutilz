@@ -13,7 +13,7 @@ import 'structured_tools_panel.dart';
 /// Maps a ribbon `panelId` to its title and content. Only the MIME, edit,
 /// and go-to-line panels become bars — `new` and `autodelete` are forms and
 /// stay inside the ribbon, which is what [handles] distinguishes.
-class ToolBar extends StatelessWidget {
+class ToolBar extends StatefulWidget {
   final String panelId;
   final bool editToolsEnabled;
   final bool mimeToolsEnabled;
@@ -52,6 +52,9 @@ class ToolBar extends StatelessWidget {
   /// Structured bars: whether the document is revalidated after typing stops.
   final bool structuredAutoValidate;
   final ValueChanged<bool>? onStructuredAutoValidateChanged;
+
+  @override
+  State<ToolBar> createState() => _ToolBarState();
 
   /// The aggregate MIME tools bar: all four categories as tabs in one bar.
   /// This is the menu's MIME entry; the per-operation ids below are reachable
@@ -99,72 +102,100 @@ class ToolBar extends StatelessWidget {
     'mime.url.decode': (MimeCategory.url, true, 'URL Decode'),
     'mime.saml.decode': (MimeCategory.saml, true, 'SAML Decode'),
   };
+}
+
+class _ToolBarState extends State<ToolBar> {
+  /// Which face a single-operation MIME bar is showing.
+  ///
+  /// Lives here rather than in [SingleMimeToolPanel] because the docked bar's
+  /// title has to track it: the panel used to own the flag, so tapping Decode
+  /// changed the Apply label while the tab above still read "Base64 Encode".
+  /// Null until the user touches the selector, so the bar opens on whichever
+  /// face its menu entry named.
+  bool? _decode;
+
+  /// The bar's current decode state: the user's choice if they made one,
+  /// otherwise the face the panel id asked for.
+  bool _decodeFor(bool fromId) => _decode ?? fromId;
+
+  @override
+  void didUpdateWidget(ToolBar old) {
+    super.didUpdateWidget(old);
+    // A different tool is now docked, so a choice made in the previous one
+    // must not carry over — mime.url.encode should open on Encode even if the
+    // user last left the Base64 bar on Decode.
+    if (old.panelId != widget.panelId) _decode = null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (panelId == gotoId) {
+    if (widget.panelId == ToolBar.gotoId) {
       return DockedBar(
         title: 'Go to Line',
-        onClose: onClose,
+        onClose: widget.onClose,
         child: GotoLinePanel(
-          lineCount: lineCount,
-          currentLine: currentLine,
-          onGotoLine: onGotoLine ?? (_) {},
-          onClose: onClose,
+          lineCount: widget.lineCount,
+          currentLine: widget.currentLine,
+          onGotoLine: widget.onGotoLine ?? (_) {},
+          onClose: widget.onClose,
         ),
       );
     }
-    final edit = _editSpecs[panelId];
+    final edit = ToolBar._editSpecs[widget.panelId];
     if (edit != null) {
       return DockedBar(
         title: edit.$2,
-        onClose: onClose,
+        onClose: widget.onClose,
         child: EditToolsPanel(
-          enabled: editToolsEnabled,
+          enabled: widget.editToolsEnabled,
           category: edit.$1,
-          onRun: onRunEditOp,
+          onRun: widget.onRunEditOp,
         ),
       );
     }
-    if (panelId == mimeAllId) {
+    if (widget.panelId == ToolBar.mimeAllId) {
       return DockedBar(
         title: 'MIME tools',
-        onClose: onClose,
+        onClose: widget.onClose,
         child: MimeToolsPanel(
-          enabled: mimeToolsEnabled,
-          hasSelection: mimeHasSelection,
-          onRun: onRunMimeOp,
+          enabled: widget.mimeToolsEnabled,
+          hasSelection: widget.mimeHasSelection,
+          onRun: widget.onRunMimeOp,
         ),
       );
     }
-    final structured = _structuredSpecs[panelId];
+    final structured = ToolBar._structuredSpecs[widget.panelId];
     if (structured != null) {
       return DockedBar(
         title:
-            '${MarkupStyling.label(structured == StructuredLanguage.json && structuredUseJson5 ? StructuredLanguage.json5 : structured)} tools',
-        onClose: onClose,
+            '${MarkupStyling.label(structured == StructuredLanguage.json && widget.structuredUseJson5 ? StructuredLanguage.json5 : structured)} tools',
+        onClose: widget.onClose,
         child: StructuredToolsPanel(
           language: structured,
-          enabled: editToolsEnabled,
-          hasSelection: mimeHasSelection,
-          useJson5: structuredUseJson5,
-          onUseJson5Changed: onStructuredUseJson5Changed,
-          autoValidate: structuredAutoValidate,
-          onAutoValidateChanged: onStructuredAutoValidateChanged,
-          onRun: onRunStructuredOp,
+          enabled: widget.editToolsEnabled,
+          hasSelection: widget.mimeHasSelection,
+          useJson5: widget.structuredUseJson5,
+          onUseJson5Changed: widget.onStructuredUseJson5Changed,
+          autoValidate: widget.structuredAutoValidate,
+          onAutoValidateChanged: widget.onStructuredAutoValidateChanged,
+          onRun: widget.onRunStructuredOp,
         ),
       );
     }
-    final mime = _mimeSpecs[panelId]!;
+    final mime = ToolBar._mimeSpecs[widget.panelId]!;
+    final decode = _decodeFor(mime.$2);
     return DockedBar(
-      title: mime.$3,
-      onClose: onClose,
+      // Titled from the live decode flag, not from the panel id, so the tab
+      // and the Apply button always name the same operation.
+      title: MimeOp(category: mime.$1, decode: decode).label,
+      onClose: widget.onClose,
       child: SingleMimeToolPanel(
-        enabled: mimeToolsEnabled,
-        hasSelection: mimeHasSelection,
+        enabled: widget.mimeToolsEnabled,
+        hasSelection: widget.mimeHasSelection,
         category: mime.$1,
-        initialDecode: mime.$2,
-        onRun: onRunMimeOp,
+        decode: decode,
+        onDecodeChanged: (v) => setState(() => _decode = v),
+        onRun: widget.onRunMimeOp,
       ),
     );
   }

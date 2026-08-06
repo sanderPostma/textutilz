@@ -66,7 +66,7 @@ class DockedBar extends StatelessWidget {
   Widget _titleBand(ColorScheme scheme, String text) => Container(
     width: double.infinity,
     color: scheme.secondaryContainer,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
     child: Text(
       text,
       textAlign: TextAlign.center,
@@ -79,10 +79,20 @@ class DockedBar extends StatelessWidget {
     ),
   );
 
+  /// The close button, sized down from Material's default.
+  ///
+  /// A stock [IconButton] is 40px square even at compact density, and since it
+  /// is the tallest thing in the control row it — not the controls — set every
+  /// one-row bar's height. Trimming it to 28px is the single largest saving
+  /// available in this chrome, and 28px is still a comfortable mouse target;
+  /// this is a desktop app, not a touch one.
   Widget _closeButton() => IconButton(
     icon: const Icon(Icons.close, size: 18),
     tooltip: 'Close (Esc)',
     onPressed: onClose,
     visualDensity: VisualDensity.compact,
+    style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints.tightFor(width: 28, height: 28),
   );
 }

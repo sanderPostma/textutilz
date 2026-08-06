@@ -401,7 +401,14 @@ class SingleMimeToolPanel extends StatefulWidget {
   final bool enabled;
   final bool hasSelection;
   final MimeCategory category;
-  final bool initialDecode;
+
+  /// Whether the bar is on its decode face.
+  ///
+  /// Controlled by the host rather than held here, because the docked bar's
+  /// title has to change with it — a panel that owned this state left the tab
+  /// reading "Base64 Encode" while the button underneath said Decode.
+  final bool decode;
+  final ValueChanged<bool> onDecodeChanged;
   final ValueChanged<MimeOp> onRun;
 
   const SingleMimeToolPanel({
@@ -409,7 +416,8 @@ class SingleMimeToolPanel extends StatefulWidget {
     required this.enabled,
     this.hasSelection = false,
     required this.category,
-    required this.initialDecode,
+    required this.decode,
+    required this.onDecodeChanged,
     required this.onRun,
   });
 
@@ -418,7 +426,7 @@ class SingleMimeToolPanel extends StatefulWidget {
 }
 
 class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
-  late bool _decode;
+  bool get _decode => widget.decode;
 
   bool _b64Padding = true;
   bool _b64UnixEol = false;
@@ -427,12 +435,6 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
 
   UrlEncodeVariant _urlVariant = UrlEncodeVariant.rfc1738;
   bool _urlByLine = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _decode = widget.initialDecode;
-  }
 
   MimeOp get _currentOp {
     switch (widget.category) {
@@ -571,7 +573,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
 
   List<Widget> _base64Options(ColorScheme scheme) {
     return [
-      _modeSelector(_decode, (v) => setState(() => _decode = v)),
+      _modeSelector(_decode, widget.onDecodeChanged),
       if (_decode) ...[
         _check('Strict', _b64Strict, (v) => setState(() => _b64Strict = v)),
         _check('By line', _b64ByLine, (v) => setState(() => _b64ByLine = v)),
@@ -584,12 +586,12 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   }
 
   List<Widget> _quotedPrintableOptions(ColorScheme scheme) {
-    return [_modeSelector(_decode, (v) => setState(() => _decode = v))];
+    return [_modeSelector(_decode, widget.onDecodeChanged)];
   }
 
   List<Widget> _urlOptions(ColorScheme scheme) {
     return [
-      _modeSelector(_decode, (v) => setState(() => _decode = v)),
+      _modeSelector(_decode, widget.onDecodeChanged),
       if (!_decode) ...[
         SegmentedButton<UrlEncodeVariant>(
           segments: const [
