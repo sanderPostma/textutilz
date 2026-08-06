@@ -163,23 +163,34 @@ keeps the previous size and updates only the flag.
 
 ## 3. Performance
 
-- [ ] **Replace All is quadratic in match count.** Measured in release: 10k
-      matches 0.6s, 20k 2.1s, 40k 7.3s. Extrapolated, ~200k matches is minutes
-      with no progress indicator and no cancel.
+- [ ] **Replace All is no longer quadratic, but it is not linear either.**
+      Measured in release by `replace_all_timing` (an `#[ignore]`d test;
+      `cargo test --release -- --ignored --nocapture replace_all_timing`):
 
-      Root cause predates find/replace: `prepare_edit` pushes to `edited_rows`
-      and re-sorts (O(n log n) per edit), and `get_logical` scans `edited_rows`
-      linearly. `replace_all_in_rows` is just the first API that drives it tens
-      of thousands of times in one call.
+      | matches | before | after |
+      |---|---|---|
+      | 10k | 438 ms | 124 ms |
+      | 20k | 1.70 s | 263 ms |
+      | 40k | 6.86 s | 552 ms |
+      | 200k | (minutes) | 4.8 s |
 
-      Two directions: keep `edited_rows` sorted by insertion rather than
-      re-sorting, and replace `get_logical`'s linear scan with a binary search
-      or prefix-sum index. **Both touch the copy-on-write overlay and undo
-      bookkeeping that all editing depends on** — this needs its own review
-      cycle, not a drive-by fix.
+      The fix was one line: `prepare_edit` pushed to `edited_rows` and
+      re-sorted, at O(n log n) per edit, re-establishing an invariant that
+      already held. It now inserts in place at the position a binary search
+      gives.
 
-      Interim option if it bites before then: warn or confirm above some match
-      count, so nobody hits a multi-minute freeze.
+      What is left is `get_logical`'s linear scan of `edited_rows`, which runs
+      twice per match, and it still shows — 200k matches take 2.8x the time of
+      100k, not 2x. Fixing that needs a prefix-sum or Fenwick index over the
+      overlay, and **an `added_lines == 0` short-circuit is not the answer:
+      it was tried, and it is wrong**, because a split and a join cancel out
+      and leave the counter at zero while the mapping is not the identity.
+      Two existing tests catch that. A correct short-circuit needs a count of
+      rows whose overlay holds other than exactly one line, maintained at every
+      site that mutates an overlay vector. That is still the review cycle this
+      was always going to need — but 4.8 s with no progress bar is a different
+      problem from minutes with no progress bar, so the "warn above some match
+      count" interim is no longer urgent.
 
 - [ ] **What does 200 open tabs of large files actually cost?** Established so
       far, by reading the code rather than measuring: nothing is mmap'd (there

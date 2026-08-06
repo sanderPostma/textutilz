@@ -343,6 +343,19 @@ impl EditSession {
     }
 
     /// (original_row, sub_index) for a visual row.
+    ///
+    /// Still linear in the number of edited rows, and that is what is left of
+    /// Replace All's superlinearity — it runs once per primitive edit, and
+    /// Replace All performs two per match.
+    ///
+    /// An `added_lines == 0` fast path was tried and is **wrong**: a split and
+    /// a join in the same session cancel out, so the counter reaches zero
+    /// while the mapping is not the identity. Two existing tests catch it
+    /// (`replace_all_swaps_content_and_undoes_in_one_step`,
+    /// `undo_delete_restores_bytes`). A correct short-circuit needs a count of
+    /// rows whose overlay holds other than exactly one line, maintained at
+    /// every site that mutates an overlay vector — which is the review cycle
+    /// this was always going to need.
     fn get_logical(&self, vrow: usize) -> (usize, usize) {
         let mut current_v = 0usize;
         let mut current_o = 0usize;
@@ -379,8 +392,12 @@ impl EditSession {
         if !self.overlay.contains_key(&orow) {
             let line = self.base_line(orow);
             self.overlay.insert(orow, vec![line]);
-            self.edited_rows.push(orow);
-            self.edited_rows.sort_unstable();
+            // Inserted in place rather than pushed and re-sorted. The list is
+            // sorted by construction, so the sort was re-establishing an
+            // invariant that already held — at O(n log n) per edit, on a path
+            // Replace All drives once per match.
+            let at = self.edited_rows.partition_point(|&r| r < orow);
+            self.edited_rows.insert(at, orow);
         }
     }
 
@@ -2132,6 +2149,35 @@ mod tests {
             .tokens
             .iter()
             .any(|t| t.kind == StructuredTokenKind::Key));
+    }
+
+    /// What Replace All costs as the match count grows.
+    ///
+    /// Ignored by default: it measures rather than asserts, and the numbers
+    /// mean nothing in a debug build. Run it with
+    /// `cargo test --release -- --ignored --nocapture replace_all_timing`.
+    #[test]
+    #[ignore]
+    fn replace_all_timing() {
+        for rows in [5_000usize, 10_000, 20_000, 40_000, 100_000, 200_000] {
+            let doc: String = (0..rows)
+                .map(|i| format!("line {i} needle here\n"))
+                .collect();
+            let (mut s, _p) = session(&doc);
+            let query = crate::api::search::SearchQuery {
+                pattern: "needle".to_string(),
+                mode: crate::api::search::SearchMode::Normal,
+                match_case: true,
+                whole_word: false,
+                dot_matches_newline: false,
+            };
+            let start = std::time::Instant::now();
+            let n = s.replace_all_in_rows(query, "pin".to_string(), None, false).unwrap();
+            println!(
+                "{n:>7} matches  {:>9.2} ms",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
     }
 
     #[test]
