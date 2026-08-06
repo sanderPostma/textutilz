@@ -77,6 +77,13 @@ the surface must be sized to at least the runner's 980px minimum, and the store
 must be opened through `AppStore.openAt` so a test never touches the real
 session.
 
+Note its temp-file rule, learned the hard way: `flutter test` runs each test
+*file* in its own isolate, so any counter the harness keeps restarts at zero in
+every one of them. Two files racing on the same temp database name produced
+intermittent "database is locked" and "attempt to write a readonly database"
+failures in whichever test lost. Each harness now gets its own
+`createTempSync` directory.
+
 **Anything still marked "manual check" should be assumed broken until a test
 says otherwise.** The harness found three live bugs in the first five
 behaviours it was pointed at: Alt+0/Alt+1..8 never reached the fold commands,

@@ -30,9 +30,10 @@ import 'package:textutilz/src/rust/api/store.dart';
 /// The shell restores its tabs through its normal `_restoreSession` path, so
 /// the setup here exercises production code rather than reaching around it.
 class AppShellHarness {
-  AppShellHarness._(this.storePath, this._files);
+  AppShellHarness._(this.storePath, this._dir, this._files);
 
   final String storePath;
+  final String _dir;
   final List<String> _files;
 
   /// The window size the shell is pumped at. Above the runner's 980px floor,
@@ -53,15 +54,21 @@ class AppShellHarness {
     String viewMode = ViewMode.edit,
   }) async {
     final id = _counter++;
-    final dir = Directory.systemTemp.path;
-    final storePath = '$dir/textutilz_shell_$id.db';
+    // A fresh directory per harness, not a counter-named file in the shared
+    // temp dir. `flutter test` runs each test FILE in its own isolate, so the
+    // counter restarts at zero in every one of them and two files racing on
+    // `textutilz_shell_0.db` produced "database is locked" and "attempt to
+    // write a readonly database" — intermittently, in whichever test happened
+    // to lose.
+    final dir = Directory.systemTemp.createTempSync('textutilz_shell_').path;
+    final storePath = '$dir/session_$id.db';
     final files = <String>[];
 
     final store = AppStore.openAt(path: storePath);
     final records = <DocRecord>[];
     int order = 0;
     for (final entry in documents.entries) {
-      final path = '$dir/textutilz_shell_${id}_${entry.key}';
+      final path = '$dir/${entry.key}';
       File(path).writeAsStringSync(entry.value);
       files.add(path);
       records.add(
@@ -96,7 +103,7 @@ class AppShellHarness {
     await tester.pumpWidget(const app.MyApp());
     await tester.pump();
 
-    final harness = AppShellHarness._(storePath, files);
+    final harness = AppShellHarness._(storePath, dir, files);
     addTearDown(() {
       tester.view.reset();
       app.appStore = null;
@@ -116,5 +123,8 @@ class AppShellHarness {
         File(path).deleteSync();
       } catch (_) {}
     }
+    try {
+      Directory(_dir).deleteSync(recursive: true);
+    } catch (_) {}
   }
 }
