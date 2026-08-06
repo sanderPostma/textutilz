@@ -2151,6 +2151,54 @@ mod tests {
             .any(|t| t.kind == StructuredTokenKind::Key));
     }
 
+    /// What a lot of open tabs over a large file actually costs.
+    ///
+    /// The specs said "mmap"; the code has never mmap'd anything. Each open
+    /// tab holds a `File` handle plus `line_offsets: Vec<usize>` — 8 bytes per
+    /// line, resident for as long as the tab is open — and reads rows from
+    /// disk on demand. So the file *contents* are not in memory but the index
+    /// is, and the index is what needed measuring.
+    ///
+    /// Reports resident set size from `/proc/self/statm`, which is Linux-only
+    /// and exact enough for a number this large. Ignored by default; run with
+    /// `cargo test --release -- --ignored --nocapture open_tab_cost`.
+    #[test]
+    #[ignore]
+    fn open_tab_cost() {
+        fn rss_bytes() -> usize {
+            let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
+            let resident: usize = statm
+                .split_whitespace()
+                .nth(1)
+                .and_then(|f| f.parse().ok())
+                .unwrap_or(0);
+            resident * 4096
+        }
+
+        // 1M lines is a large-but-real log; 200 tabs of it is the question.
+        const LINES: usize = 1_000_000;
+        const TABS: usize = 200;
+        let doc: String = (0..LINES).map(|i| format!("line {i} of a log file\n")).collect();
+        let (first, path) = session(&doc);
+
+        let before = rss_bytes();
+        let mut sessions = vec![first];
+        for _ in 1..TABS {
+            sessions.push(EditSession::open(path.clone()).unwrap());
+        }
+        let after = rss_bytes();
+
+        let per_tab = (after - before) / (TABS - 1);
+        println!(
+            "{TABS} tabs x {LINES} lines: RSS +{:.1} MB, {:.2} MB per tab \
+             (index alone would be {:.2} MB)",
+            (after - before) as f64 / 1e6,
+            per_tab as f64 / 1e6,
+            (LINES * std::mem::size_of::<usize>()) as f64 / 1e6,
+        );
+        assert_eq!(sessions.len(), TABS);
+    }
+
     /// What Replace All costs as the match count grows.
     ///
     /// Ignored by default: it measures rather than asserts, and the numbers

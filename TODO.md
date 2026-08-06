@@ -192,25 +192,25 @@ keeps the previous size and updates only the flag.
       problem from minutes with no progress bar, so the "warn above some match
       count" interim is no longer urgent.
 
-- [ ] **What does 200 open tabs of large files actually cost?** Established so
-      far, by reading the code rather than measuring: nothing is mmap'd (there
-      is no `memmap` dependency, despite the word appearing in the specs).
-      `FileBuffer` (`rust/src/api/file_manager.rs:38`) holds an open `File`
-      handle plus `line_offsets: Vec<usize>` — **8 bytes per line, resident for
-      as long as the tab is open** — and reads rows from disk on demand. File
-      *contents* are therefore not in memory, but the index is: a 10M-line log
-      is ~80MB of `line_offsets` alone, and 200 of those would be ~16GB.
-      That index, not the file bytes, is the thing to measure and to bound.
+- [ ] **200 open tabs of large files costs 8 MB per million lines per tab —
+      measured.** `open_tab_cost` (an `#[ignore]`d test; `cargo test --release
+      -- --ignored --nocapture open_tab_cost`) opens 200 sessions over a
+      1M-line file and reads RSS from `/proc/self/statm`: **+1592.8 MB, 8.00 MB
+      per tab**, against 8.00 MB for the `line_offsets` index alone.
 
-      On top of it, per open tab: the `overlay` HashMap (only lines actually
-      edited), the undo and redo stacks (which are unbounded), the markup
-      checkpoint cache (one `LexState` per 128 rows, and only for a document
-      someone coloured), and one OS file descriptor.
+      So the index is not merely the dominant cost, it is the *entire*
+      measurable cost — the `File` handle, the empty overlay, the undo stacks
+      and the absent markup cache do not register. Nothing is mmap'd, as the
+      code always said and the specs always denied.
 
-      Worth answering with real numbers before deciding anything. If it does
-      bite, the shapes are: a sparser line index (every Nth line plus a scan),
-      or evicting the index for tabs that have not been looked at, rebuilding
-      it on activation.
+      Linear in lines, so the earlier estimate holds: a 10M-line log is ~80 MB
+      of index, and 200 of those would be ~16 GB. Whether that is worth fixing
+      is a product question — 200 tabs of 10M-line logs is not a normal
+      session — but if it is, the shapes are unchanged: a sparser index (every
+      Nth line plus a short scan) trades a fixed fraction of the memory for a
+      bounded scan per read, and evicting the index for tabs nobody has looked
+      at trades a rebuild on activation. The measurement harness now exists to
+      judge either.
 
 ---
 
