@@ -214,7 +214,20 @@ impl AppStore {
     /// ensure the schema exists.
     #[flutter_rust_bridge::frb(sync)]
     pub fn open() -> anyhow::Result<AppStore> {
-        let path = crate::api::paths::db_path()?;
+        AppStore::open_at(crate::api::paths::db_path()?)
+    }
+
+    /// Open a store at an explicit path.
+    ///
+    /// The location seam. [`open`](Self::open) is what the app calls; this is
+    /// for anything that must not touch the user's real session — widget tests
+    /// pumping the app shell against a seeded database, and a portable mode
+    /// keeping its state beside the binary.
+    ///
+    /// Without it a widget test that exercises session restore would read and
+    /// overwrite the tabs of whoever ran the suite.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open_at(path: String) -> anyhow::Result<AppStore> {
         let mut conn = SqliteConnection::establish(&path)?;
         init_schema(&mut conn)?;
         Ok(AppStore {
@@ -424,6 +437,19 @@ mod tests {
         let back = s.load_session(0).unwrap();
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].language_override, None);
+    }
+
+    #[test]
+    fn open_at_creates_and_then_reopens_the_same_database() {
+        // The seam widget tests rely on: a store at a path of the caller's
+        // choosing, schema-initialised, that keeps what was written to it.
+        let path = temp_db();
+        {
+            let mut s = AppStore::open_at(path.clone()).unwrap();
+            s.save_session(vec![rec("a", 0, "off", 0)]).unwrap();
+        }
+        let mut again = AppStore::open_at(path).unwrap();
+        assert_eq!(again.load_session(0).unwrap().len(), 1);
     }
 
     #[test]

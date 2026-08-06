@@ -1899,6 +1899,16 @@ class CustomEditorState extends State<CustomEditor> {
               _bubbleShortcutKeys.contains(event.logicalKey)) {
             return KeyEventResult.ignored;
           }
+          // Alt+<digit> is fold-to-level, which `_handleGlobalShortcut` owns.
+          // This is the guard that actually delivers it: the matching one in
+          // [_handleKey] only stops the digit being typed into the document,
+          // and the `handled` below would otherwise consume the event before
+          // the shell ever sees it.
+          if (HardwareKeyboard.instance.isAltPressed &&
+              !HardwareKeyboard.instance.isControlPressed &&
+              _bubbleAltDigits.contains(event.logicalKey)) {
+            return KeyEventResult.ignored;
+          }
           _handleKey(event);
           return KeyEventResult.handled;
         },

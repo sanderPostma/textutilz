@@ -24,6 +24,18 @@ abstract class AppStore implements RustOpaqueInterface {
   /// ensure the schema exists.
   static AppStore open() => RustLib.instance.api.crateApiStoreAppStoreOpen();
 
+  /// Open a store at an explicit path.
+  ///
+  /// The location seam. [`open`](Self::open) is what the app calls; this is
+  /// for anything that must not touch the user's real session — widget tests
+  /// pumping the app shell against a seeded database, and a portable mode
+  /// keeping its state beside the binary.
+  ///
+  /// Without it a widget test that exercises session restore would read and
+  /// overwrite the tabs of whoever ran the suite.
+  static AppStore openAt({required String path}) =>
+      RustLib.instance.api.crateApiStoreAppStoreOpenAt(path: path);
+
   /// Replace the whole persisted tab set with `docs`, in the given order. The
   /// caller passes exactly the tabs it wants restored next launch (e.g.
   /// excluding onAppClose docs at shutdown).

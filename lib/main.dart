@@ -505,34 +505,49 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
         'follow this. Stored type: ${tab.meta.contentType}. Click to change.';
   }
 
+  /// The "no pin, detect instead" entry in the format picker. Not a language
+  /// id, so `structuredLanguageFromId` returns null for it — see
+  /// [_buildLanguagePicker].
+  static const String _autoDetectId = 'auto';
+
   /// The status-bar format control: shows the effective format, and opens the
   /// list of formats the document can be pinned to.
   ///
   /// A pin is the escape hatch for the cases detection cannot win: a `.txt`
   /// file that is really YAML, a `.json` file the user wants read as JSON5, or
   /// an empty scratch buffer that has nothing to detect from yet.
+  ///
+  /// The menu is keyed on the language *ids* rather than on
+  /// `StructuredLanguage?` values, because `PopupMenuButton` reads a null
+  /// selection as "the menu was dismissed" and routes it to `onCanceled` — so
+  /// an Auto-detect entry valued null could set a pin but never clear one.
+  /// `_autoDetectId` is deliberately not a language id, which is exactly what
+  /// makes `structuredLanguageFromId` map it back to null.
   Widget _buildLanguagePicker() {
     final tab = _activeTab;
-    final pinned = tab?.meta.languageOverride;
+    final pinnedId = tab?.meta.languageOverride == null
+        ? _autoDetectId
+        : structuredLanguageId(language: tab!.meta.languageOverride!);
     return Tooltip(
       message: _documentTypeTooltip,
-      child: PopupMenuButton<StructuredLanguage?>(
+      child: PopupMenuButton<String>(
         key: const ValueKey('status-document-type'),
         enabled: tab != null,
         position: PopupMenuPosition.over,
         tooltip: '',
-        onSelected: _setLanguageOverride,
+        onSelected: (id) =>
+            _setLanguageOverride(structuredLanguageFromId(id: id)),
         itemBuilder: (context) => [
-          CheckedPopupMenuItem<StructuredLanguage?>(
-            value: null,
-            checked: pinned == null,
+          CheckedPopupMenuItem<String>(
+            value: _autoDetectId,
+            checked: pinnedId == _autoDetectId,
             child: const Text('Auto-detect'),
           ),
           const PopupMenuDivider(),
           for (final language in structuredLanguages())
-            CheckedPopupMenuItem<StructuredLanguage?>(
-              value: language,
-              checked: pinned == language,
+            CheckedPopupMenuItem<String>(
+              value: structuredLanguageId(language: language),
+              checked: pinnedId == structuredLanguageId(language: language),
               child: Text(MarkupStyling.label(language)),
             ),
         ],

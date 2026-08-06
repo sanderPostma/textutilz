@@ -47,14 +47,15 @@ Two notes for the next per-document field:
    `32-column-tables`. The next ceiling is 32, and the failure is a compile
    error in the `diesel::table!` macro, not a runtime one.
 
-- [ ] **The fold key bindings have no automated test.** `foldAll`,
-      `foldToLevel`, `unfoldLevel` and the caret pair are covered by
-      `test/fold_commands_test.dart`, but that a keypress *reaches* them is not:
-      `_handleFoldShortcut` (`lib/main.dart`) and the editor's bubble guard
-      (`_bubbleAltDigits`, `lib/editor.dart`) both need the `_TextEditorState`
-      harness that §1 already wants. Alt+0, Alt+1..8 and Ctrl+Alt+F are manual
-      checks. Detail in
-      `docs/superpowers/specs/2026-08-06-fold-keyboard-design.md`.
+Since 2026-08-06 there is also an **app-shell harness** (`test/app_shell.dart`),
+which pumps the real `MyApp` against a seeded temp session and made the two
+"needs a `_TextEditorState` harness" items testable. It found two live bugs the
+moment it existed — Alt+0/Alt+1..8 never reached the fold commands at all, and
+the picker's Auto-detect entry could never be chosen — so treat anything else
+still marked "manual check" as unverified rather than working. Read its doc
+comment before writing shell tests: the surface must be sized to at least the
+runner's 980px minimum, and the store must be opened through `AppStore.openAt`
+so a test never touches the real session.
 
 - [ ] **Auto-validation runs the full document pass.** `markupAnalysis` is
       O(document); the 2 s idle debounce keeps a typing burst to one pass, but a
@@ -68,13 +69,6 @@ Two notes for the next per-document field:
       (`looks_like_yaml`, `rust/src/markup/language.rs`). Both were traded away
       to stop Markdown being claimed as YAML; both only matter when the file has
       no extension and no content type.
-
-- [ ] **The status-bar language picker has no automated test.** The pin itself
-      is covered from both sides — `test/language_override_test.dart` for the
-      Dart plumbing and persistence, `rust/src/api/edit_session.rs` for the
-      precedence — but that the menu is reachable and that picking an entry
-      calls `_setLanguageOverride` is a manual check, for the same reason as
-      the fold keys: it needs a harness over the app shell.
 
 - [ ] **The token palette is hardcoded.** `MarkupStyling.colorFor`
       (`lib/markup_styling.dart`) holds a light and a dark colour per token
@@ -115,8 +109,11 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
   means hoisting the decode flag out of `SingleMimeToolPanel`, which makes
   that widget half-controlled and `ToolBar` stateful.
 - **Three behaviours have no automated test** — `_openToolBar`'s early
-  return, the ViewMode retarget, and the live selection marker. All need a
-  `_TextEditorState` harness that does not exist; they are manual checks.
+  return, the ViewMode retarget, and the live selection marker. The harness
+  they were waiting on now exists (`test/app_shell.dart`), so these are
+  writable; they simply have not been written. Given that the harness found
+  two real bugs in the first two behaviours it was pointed at, assume these
+  three are broken until a test says otherwise.
 - **Manual GUI verification is still owed** for the docked-tool-bar spec's
   9-point checklist, including confirming that the find bar is pixel-identical
   to its pre-`DockedBar` appearance. The separate find/replace checklist has
@@ -254,12 +251,11 @@ Treat "the tests pass" with more suspicion than usual in this area.
 
 ## 6. Housekeeping
 
-- [ ] **No smoke test for the app shell.** `test/widget_test.dart` was the stock
-      Flutter counter-app template test, asserting on a `+` button and a `0`
-      counter this app never had; it had been failing since before the
-      find/replace work and was deleted so the suite could go green. Nothing
-      replaced it. A test that pumps the app shell and asserts it builds would
-      be worth having.
+- [x] **No smoke test for the app shell.** Covered incidentally:
+      `test/app_shell.dart` pumps the real `MyApp` and every test in
+      `test/fold_keys_test.dart` and `test/status_bar_picker_test.dart` fails
+      if the shell cannot build. The stock counter-app `test/widget_test.dart`
+      that used to occupy this slot stays deleted.
 
 - [ ] **Flutter test hazard, documented for whoever writes the next widget
       test:** awaiting a Rust FFI call directly inside a `testWidgets` body
@@ -279,5 +275,5 @@ Treat "the tests pass" with more suspicion than usual in this area.
       dynamic library". Re-run `cargo build` after any Rust change or the tests
       exercise a stale library.
 
-- [ ] **`master` is 29 commits ahead of `origin/master`** and has not been
-      pushed.
+- [x] **`master` is 29 commits ahead of `origin/master`** — pushed 2026-08-06,
+      along with `feature/docked-tool-bars`; both are at the same commit.
