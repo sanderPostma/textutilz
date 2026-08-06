@@ -302,20 +302,38 @@ fn looks_like_xml(sample: &str, trimmed: &str) -> bool {
 /// - at least two structural rows, so a single `Title: something` line in a note
 ///   is not enough.
 ///
-/// The deliberate cost: a top-level YAML sequence with no marker
-/// (`- a\n- b`) reads as plain text, and so does a flow collection wrapped
-/// onto an unindented continuation row. Both are rare, both only matter when
-/// the file has no extension and no content type, and both are fixed by saving
-/// the file or setting its type.
+/// A row continuing an open flow collection (`hosts: [alpha,` / `beta]`) is
+/// skipped rather than judged — see [`flow_delta`].
+///
+/// The one deliberate cost left: a top-level YAML sequence with no marker
+/// (`- a\n- b`) reads as plain text. That one is not a heuristic gap but a
+/// genuine tie — the same two lines are also a valid Markdown bullet list, and
+/// nothing in the text distinguishes them. Plain text is the safe side of the
+/// tie, and since 2026-08-06 the user can pin the format from the status bar,
+/// which makes it cheap to be wrong here.
 fn looks_like_yaml(sample: &str) -> bool {
     let mut structural = 0usize;
     let mut mappings = 0usize;
     let mut marker = false;
     let mut examined = 0usize;
+    // Unclosed `[`/`{` carried over from the rows above.
+    let mut flow = 0i32;
 
     for row in sample.lines() {
         let trimmed = row.trim();
         if trimmed.is_empty() {
+            continue;
+        }
+        // A flow collection may be continued on an unindented row:
+        //
+        //     hosts: [alpha,
+        //     beta]
+        //
+        // `beta]` is neither a mapping nor a sequence item, so judging it would
+        // reject the whole document. It belongs to the row that opened the
+        // bracket, exactly as an indented continuation does.
+        if flow > 0 {
+            flow += flow_delta(trimmed);
             continue;
         }
         // Only indent-0 rows are judged; deeper rows are values, sequence
@@ -343,11 +361,13 @@ fn looks_like_yaml(sample: &str) -> bool {
         }
         if trimmed.starts_with("- ") || trimmed == "-" {
             structural += 1;
+            flow += flow_delta(trimmed);
             continue;
         }
         if is_mapping_row(trimmed) {
             structural += 1;
             mappings += 1;
+            flow += flow_delta(trimmed);
             continue;
         }
         // An indent-0 row that is none of the above. Whatever this document is,
@@ -362,6 +382,33 @@ fn looks_like_yaml(sample: &str) -> bool {
         return true;
     }
     mappings > 0 && structural >= 2
+}
+
+/// How far a row opens or closes flow collections, ignoring quoted text and
+/// anything after a `#` comment.
+///
+/// Deliberately crude — it decides only whether the *next* row is a
+/// continuation, and a wrong answer costs autodetection on a file with no
+/// extension, nothing more.
+fn flow_delta(row: &str) -> i32 {
+    let mut delta = 0i32;
+    let mut quote = 0u8;
+    for &b in row.as_bytes() {
+        if quote != 0 {
+            if b == quote {
+                quote = 0;
+            }
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => quote = b,
+            b'#' => break,
+            b'[' | b'{' => delta += 1,
+            b']' | b'}' => delta -= 1,
+            _ => {}
+        }
+    }
+    delta
 }
 
 /// `key:` or `key: value`, with a key that has no spaces — the shape a YAML
@@ -577,6 +624,33 @@ mod tests {
         assert_eq!(
             detect("txt", "", "script: |\n  not: a mapping\n  just text\nafter: 1\n"),
             MarkupLanguage::Yaml
+        );
+    }
+
+    #[test]
+    fn a_flow_collection_may_be_continued_on_an_unindented_row() {
+        // `beta]` is neither a mapping nor a sequence item; before the flow
+        // counter it rejected the whole document.
+        assert_eq!(
+            detect("txt", "", "hosts: [alpha,\nbeta]\nport: 80\n"),
+            MarkupLanguage::Yaml
+        );
+        // Braces and several rows of continuation, and a bracket inside a
+        // quoted scalar that must not open anything.
+        let doc = "limits: {\ncpu: 1,\nmem: \"2Gi]\"\n}\nname: x\n";
+        assert_eq!(detect("txt", "", doc), MarkupLanguage::Yaml);
+    }
+
+    #[test]
+    fn an_unbalanced_bracket_does_not_swallow_the_rest_of_the_file() {
+        // The risk the flow counter introduces: a row that opens a bracket and
+        // never closes it would skip every row after it, claiming prose as
+        // YAML. The opening row still has to be structural to count at all,
+        // and the evidence has to come from rows before the bracket opened.
+        assert_eq!(
+            detect("txt", "", "note: see [1\nThis is ordinary prose.\nSo is this.\n"),
+            MarkupLanguage::PlainText,
+            "one mapping row is not enough evidence, bracket or no bracket"
         );
     }
 

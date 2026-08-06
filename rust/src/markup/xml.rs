@@ -26,6 +26,37 @@ const MODE_IN_TAG: u8 = 5;
 /// Inside a quoted attribute value that ran past the row end.
 const MODE_ATTR_VALUE: u8 = 6;
 
+/// [`LexState::pending`] while [`MODE_DOCTYPE`] is inside the declaration's
+/// internal subset — the `[ ... ]` block that may hold `<!ENTITY>` and friends.
+/// It matters because those inner declarations carry their own `>`, and ending
+/// the DOCTYPE at the first one leaves the rest of the subset lexed as element
+/// content: a wall of `Invalid` lexemes, which also drags XML autodetection
+/// down (`looks_like_xml` rejects a sample with too many of them).
+const PENDING_SUBSET: u8 = 1;
+
+/// Scan a DOCTYPE declaration from `i`, honouring an internal subset.
+///
+/// Returns the index just past the closing `>`, or `None` when the row ends
+/// first. `in_subset` carries the `[ ... ]` state in and out, so a subset that
+/// spans rows resumes correctly.
+///
+/// Bracket *nesting* is not tracked: an internal subset cannot contain another
+/// one, so the flag is enough. Quoting is not tracked either — a `>` inside an
+/// entity's replacement text would end the declaration early — but that only
+/// arises within a subset, where the `]` still recovers on the row it appears.
+fn scan_doctype(bytes: &[u8], mut i: usize, in_subset: &mut bool) -> Option<usize> {
+    while i < bytes.len() {
+        match bytes[i] {
+            b'[' if !*in_subset => *in_subset = true,
+            b']' if *in_subset => *in_subset = false,
+            b'>' if !*in_subset => return Some(i + 1),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 pub struct XmlLexer;
 
 impl MarkupLexer for XmlLexer {
@@ -70,17 +101,22 @@ impl MarkupLexer for XmlLexer {
                         return st;
                     }
                 },
-                MODE_DOCTYPE => match memchr(bytes, i, b'>') {
-                    Some(end) => {
-                        out.push(i, end + 1, MarkupTokenKind::Doctype);
-                        i = end + 1;
-                        st.mode = MODE_TEXT;
+                MODE_DOCTYPE => {
+                    let mut in_subset = st.pending == PENDING_SUBSET;
+                    match scan_doctype(bytes, i, &mut in_subset) {
+                        Some(end) => {
+                            out.push(i, end, MarkupTokenKind::Doctype);
+                            i = end;
+                            st.mode = MODE_TEXT;
+                            st.pending = 0;
+                        }
+                        None => {
+                            out.push(i, bytes.len(), MarkupTokenKind::Doctype);
+                            st.pending = if in_subset { PENDING_SUBSET } else { 0 };
+                            return st;
+                        }
                     }
-                    None => {
-                        out.push(i, bytes.len(), MarkupTokenKind::Doctype);
-                        return st;
-                    }
-                },
+                }
                 MODE_ATTR_VALUE => match memchr(bytes, i, st.quote) {
                     Some(end) => {
                         out.push(i, end + 1, MarkupTokenKind::Str);
@@ -159,14 +195,16 @@ impl MarkupLexer for XmlLexer {
                 continue;
             }
             if row[i..].starts_with("<!") {
-                match memchr(bytes, i + 2, b'>') {
+                let mut in_subset = false;
+                match scan_doctype(bytes, i + 2, &mut in_subset) {
                     Some(end) => {
-                        out.push(i, end + 1, MarkupTokenKind::Doctype);
-                        i = end + 1;
+                        out.push(i, end, MarkupTokenKind::Doctype);
+                        i = end;
                     }
                     None => {
                         out.push(i, bytes.len(), MarkupTokenKind::Doctype);
                         st.mode = MODE_DOCTYPE;
+                        st.pending = if in_subset { PENDING_SUBSET } else { 0 };
                         return st;
                     }
                 }
@@ -800,6 +838,15 @@ mod tests {
         tokens(text).into_iter().flatten().map(|t| t.kind).collect()
     }
 
+    /// Like [`kinds`], but keeping the row boundaries — what a multi-row
+    /// construct has to be judged on.
+    fn kinds_per_row(text: &str) -> Vec<Vec<MarkupTokenKind>> {
+        tokens(text)
+            .into_iter()
+            .map(|row| row.into_iter().map(|t| t.kind).collect())
+            .collect()
+    }
+
     #[test]
     fn a_simple_element_lexes_to_punctuation_name_and_text() {
         assert_eq!(
@@ -976,6 +1023,64 @@ mod tests {
     #[test]
     fn formatting_refuses_a_malformed_document() {
         assert!(pretty("<a></b>", "  ").is_err());
+    }
+
+    #[test]
+    fn a_doctype_with_an_internal_subset_is_one_declaration() {
+        // The bug: the scan ended at the `>` of `<!ENTITY`, so `"x">]>` and
+        // everything after it lexed as element content.
+        let src = "<!DOCTYPE r [<!ENTITY e \"x\">]><r/>";
+        assert_eq!(
+            kinds(src),
+            vec![
+                MarkupTokenKind::Doctype,
+                MarkupTokenKind::Punctuation,
+                MarkupTokenKind::TagName,
+                MarkupTokenKind::Punctuation,
+            ]
+        );
+        let doctype = tokens(src)[0][0].clone();
+        assert_eq!(doctype.end, 30, "the subset belongs to the declaration");
+    }
+
+    #[test]
+    fn an_internal_subset_may_span_rows() {
+        // The resume path, which is the one a real DTD exercises — subsets are
+        // written across rows far more often than inline.
+        let src = "<!DOCTYPE r [\n  <!ENTITY e \"x\">\n  <!ENTITY f \"y\">\n]>\n<r/>";
+        let rows = kinds_per_row(src);
+        for (n, row) in rows.iter().take(4).enumerate() {
+            assert_eq!(
+                row.as_slice(),
+                [MarkupTokenKind::Doctype],
+                "row {n} should still be inside the declaration"
+            );
+        }
+        assert_eq!(
+            rows[4],
+            vec![
+                MarkupTokenKind::Punctuation,
+                MarkupTokenKind::TagName,
+                MarkupTokenKind::Punctuation,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_doctype_without_a_subset_still_ends_at_its_first_gt() {
+        // The guard on the fix: `[` only opens a subset before the `>`, so an
+        // ordinary external-id DOCTYPE must not start swallowing the document.
+        let src = "<!DOCTYPE r SYSTEM \"r.dtd\">\n<r/>";
+        let rows = kinds_per_row(src);
+        assert_eq!(rows[0], vec![MarkupTokenKind::Doctype]);
+        assert_eq!(
+            rows[1],
+            vec![
+                MarkupTokenKind::Punctuation,
+                MarkupTokenKind::TagName,
+                MarkupTokenKind::Punctuation,
+            ]
+        );
     }
 
     #[test]

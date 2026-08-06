@@ -34,7 +34,7 @@ dialects at once; the JSON bar's JSON5 toggle writes the pin.
 detection signal) so colouring, folding, comment syntax, the Tools menu, the
 status bar and validation cannot disagree about what a document is.
 
-Two notes for the next per-document field:
+Three notes for the next change in this area:
 
 1. `AppStore::init_schema` runs `ensure_column` after the `CREATE TABLE IF NOT
    EXISTS` pair, because that DDL does nothing to a database that already
@@ -46,6 +46,11 @@ Two notes for the next per-document field:
    `language_override`, so `rust/Cargo.toml` now enables diesel's
    `32-column-tables`. The next ceiling is 32, and the failure is a compile
    error in the `diesel::table!` macro, not a runtime one.
+3. Anything cached on `EditSession` alongside the markup checkpoints belongs
+   *inside* `MarkupCache`, not next to it. That struct is rebuilt whenever the
+   document revision or the language changes, so a field added to it is
+   invalidated correctly with no new code — which is how the token window
+   avoids having an invalidation bug to get wrong.
 
 Since 2026-08-06 there is also an **app-shell harness** (`test/app_shell.dart`),
 which pumps the real `MyApp` against a seeded temp session and made the two
@@ -65,32 +70,60 @@ width threshold accounting for it. The row is now a reversed horizontal
 `SingleChildScrollView`, so it stays pinned right and degrades by scrolling
 rather than by painting a stripe.
 
-- [ ] **Auto-validation runs the full document pass.** `markupAnalysis` is
-      O(document); the 2 s idle debounce keeps a typing burst to one pass, but a
-      large file still pays for the whole document on every pause. The
-      `MAX_ANALYSIS_ROWS` cap (`rust/src/markup/mod.rs`) bounds it, and above
-      the cap the panel says so rather than showing an empty list.
+Four of the five items below were closed on 2026-08-06 by measuring them
+rather than by assuming; what is left is one that needs a decision, not code.
 
-- [ ] **YAML autodetection needs two structural rows and one mapping row.** A
-      top-level sequence with no `---` marker (`- a\n- b`) reads as plain text,
-      and so does a flow collection continued on an unindented row
-      (`looks_like_yaml`, `rust/src/markup/language.rs`). Both were traded away
-      to stop Markdown being claimed as YAML; both only matter when the file has
-      no extension and no content type.
+- [x] **Auto-validation runs the full document pass** — measured, and it is
+      not a problem. `markup::cost::whole_document_pass_timing` (an `#[ignore]`d
+      timing test; `cargo test --release -- --ignored --nocapture markup::cost`)
+      puts valid JSON at ~0.9 µs/row, linear: 1 ms at 1k rows, 9 ms at 10k,
+      73 ms at 50k, and the `MAX_ANALYSIS_ROWS` cap cuts in at 100k. So the
+      worst pass the app can run is ~150 ms, once per 2 s idle pause. Re-run
+      the test if the lexers grow a second pass over the rows.
 
-- [ ] **The token palette is hardcoded.** `MarkupStyling.colorFor`
+- [x] **YAML autodetection: the flow-collection half is fixed.** A row
+      continuing an open `[`/`{` (`hosts: [alpha,` / `beta]`) is now skipped
+      instead of judged, via `flow_delta` in `rust/src/markup/language.rs`,
+      which ignores quoted text and `#` comments.
+      The other half — a top-level sequence with no `---` marker (`- a\n- b`)
+      reading as plain text — is **not fixable and has been closed as such**.
+      Those two lines are equally a Markdown bullet list; nothing in the text
+      tells them apart. Plain text is the safe side of the tie, and the
+      status-bar format pin now makes being wrong cheap to correct.
+
+- [x] **Read and Tail called the lexer once per row build** — this one was
+      real, and much worse than the note claimed. The cost was never the FFI
+      crossing: `markup_tokens` resumes from the nearest checkpoint, so a
+      one-row request re-lexes up to `CHECKPOINT_ROWS` (128) rows to reach it.
+      A 50-row viewport therefore did ~64× the necessary lexing — **measured
+      at 5.3 ms per frame against a release build**, a third of a 60 Hz frame
+      budget, purely to colour what was on screen.
+      Fixed in Rust rather than Dart, so every caller benefits and the UI stays
+      thin: `EditSession` now keeps a `TokenWindow` of the last
+      `TOKEN_WINDOW_ROWS` (512) rows lexed, aligned to a checkpoint and started
+      slightly before the request so scrolling up hits too. Requests larger
+      than the window bypass it — they already amortise the warm-up. The window
+      lives inside `MarkupCache`, so the existing document-revision and
+      language checks invalidate it for free. Same measurement after: **0.48 ms
+      per frame**, 11× better.
+
+- [x] **XML DOCTYPE with an internal subset** — fixed. `scan_doctype`
+      (`rust/src/markup/xml.rs`) tracks the `[ ... ]` block, across rows, so
+      the `>` of an inner `<!ENTITY>` no longer ends the declaration and
+      strands the rest of the subset as element content. That also mattered
+      beyond colouring: the stranded rows lexed as `Invalid`, and
+      `looks_like_xml` rejects a sample with too many of those.
+
+- [ ] **The token palette is hardcoded** — the one item left, and it needs a
+      decision before any code. `MarkupStyling.colorFor`
       (`lib/markup_styling.dart`) holds a light and a dark colour per token
-      kind. Neither follows the app theme nor is user-configurable.
-
-- [ ] **Read and Tail call the lexer once per row build.** Each
-      `ListView.builder` row calls `session.markupTokens(row, row + 1)`
-      (`lib/main.dart`). Correct and cheap — it resumes from a cached checkpoint
-      — but a viewport-batched call would be one FFI crossing instead of ~50.
-
-- [ ] **XML DOCTYPE with an internal subset is scanned naively.** The lexer ends
-      the declaration at the first `>` (`rust/src/markup/xml.rs`), so a
-      `<!DOCTYPE x [ <!ENTITY ...> ]>` subset ends it early. Rare, and it costs
-      colouring rather than correctness elsewhere.
+      kind, following VS Code's convention. That is a defensible default, not
+      a defect, so "fix" could mean either of two quite different things:
+      derive the palette from the active `ColorScheme` (automatic, but the
+      accepted syntax-colour conventions do not survive being derived), or add
+      named themes the user picks and stores in the `settings` table (more
+      work, and the thing people actually ask for). Worth choosing
+      deliberately rather than drifting into the first one.
 
 ---
 
@@ -116,16 +149,15 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
   holds a fixed title per panel id (`lib/tool_bar.dart:43-51`). Fixing it
   means hoisting the decode flag out of `SingleMimeToolPanel`, which makes
   that widget half-controlled and `ToolBar` stateful.
-- **The ribbon's menu table runs off the right edge.** `_buildMenuTable`
-  (`lib/menu_ribbon.dart`) is a bare `Row` of five intrinsic-width cards
-  inside a non-scrolling ribbon. Measured at the app's 1000px default width,
-  the Tools column's centre lands at x≈1131 — outside the window, so **the
-  MIME, JSON/YAML/XML, JWT and Hex entries cannot be clicked at all** unless
-  the user has widened the window. Search still reaches them (which is how
-  `test/shell_tool_bar_test.dart` opens a MIME bar), but the menu is the
-  advertised path. Widths are upper bounds — the widget-test font is
-  fixed-width — so measure in the running app before choosing between
-  wrapping the columns, scrolling them, or narrowing the cards.
+- **The ribbon's menu table has no overflow behaviour** — `_buildMenuTable`
+  (`lib/menu_ribbon.dart`) is a bare `Row` of five intrinsic-width cards in a
+  non-scrolling ribbon, so a column that does not fit is simply unreachable.
+  Measured at 1000px the Tools column's centre lands at x≈1131, but that is
+  the fixed-width test font, which is materially wider than the real
+  proportional one — **not reproduced in the running app**, and parked as
+  such. Worth a glance at narrow widths; `test/shell_tool_bar_test.dart`
+  opens its MIME bar through ribbon search regardless, which is the more
+  robust path for a test.
 - **Manual GUI verification is still owed** for the docked-tool-bar spec's
   9-point checklist, including confirming that the find bar is pixel-identical
   to its pre-`DockedBar` appearance. The separate find/replace checklist has

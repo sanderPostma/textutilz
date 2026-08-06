@@ -416,3 +416,39 @@ mod tests {
             .any(|t| t.kind == MarkupTokenKind::Key));
     }
 }
+
+#[cfg(test)]
+mod cost {
+    use super::*;
+
+    /// What the whole-document pass actually costs, so the auto-validation
+    /// debounce can be judged against a number instead of a worry.
+    ///
+    /// Ignored by default — it is a measurement, not an assertion, and the
+    /// timings are meaningless in a debug build. Run it with:
+    /// `cargo test --release -- --ignored --nocapture markup::cost`
+    #[test]
+    #[ignore]
+    fn whole_document_pass_timing() {
+        for entries in [1_000usize, 10_000, 50_000, 100_000] {
+            let mut rows = vec!["{".to_string()];
+            for i in 0..entries {
+                let comma = if i + 1 == entries { "" } else { "," };
+                rows.push(format!(
+                    "  \"key_{i}\": {{ \"a\": {i}, \"b\": \"v{i}\" }}{comma}"
+                ));
+            }
+            rows.push("}".to_string());
+            let n = rows.len();
+            let start = std::time::Instant::now();
+            let a = analyse_rows(&rows, MarkupLanguage::Json);
+            println!(
+                "{n:>7} rows  {:>8.1} ms  folds {:>6}  diagnostics {:>4}  truncated {}",
+                start.elapsed().as_secs_f64() * 1000.0,
+                a.folds.len(),
+                a.diagnostics.len(),
+                a.truncated
+            );
+        }
+    }
+}
