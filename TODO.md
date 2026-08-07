@@ -32,7 +32,16 @@ the list of what shipped but the handful of things that cost time to learn.
    revision or the language changes, so a field added to it is invalidated
    correctly with no new code — which is how the token window avoids having an
    invalidation bug to get wrong.
-4. **Syntax hues are deliberately not derived from the theme.** The scheme
+4. **Unsaved edits to a real file are persisted, up to 4 MB.** `scratch_content`
+   used to mean "transient documents only", and a dirty real file was reopened
+   from disk on restore — losing the work with no prompt either way. It now
+   carries the text whenever a document is dirty, and `_restoreSession`
+   reapplies it so the tab comes back *dirty*, not merely with the right text.
+   The 4 MB ceiling (`is_restorable_dirty`) is there because the session is
+   rewritten on every structural change, so the content is written far more
+   often than it is read; above it the app asks before quitting rather than
+   losing the work quietly.
+5. **Syntax hues are deliberately not derived from the theme.** The scheme
    supplies a tint and the neutral roles; the hues stay canonical, because
    green-means-comment is a convention shared with every other editor and a
    pink-seeded theme must not produce pink comments.

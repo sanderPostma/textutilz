@@ -13,8 +13,29 @@ use diesel::sqlite::SqliteConnection;
 
 use crate::schema::{documents, settings};
 
-/// A persisted tab, mirrored across the frb boundary. Dart builds these from its
-/// tab list; `scratch_content` is `Some` only for transient documents.
+/// Largest unsaved document kept in the session store, in bytes.
+///
+/// Unsaved edits to a real file are persisted so they survive a restart, but
+/// the session is rewritten on every structural change — opening a tab,
+/// closing one, switching one — so the content is written far more often than
+/// it is read. A dirty 200 MB log would make each of those writes 200 MB.
+///
+/// 4 MB covers source files, configuration and JSON by a wide margin; what it
+/// excludes is the large-log case, where the app is a viewer and unsaved edits
+/// are not the point. Documents above it are reported by
+/// [`is_restorable_dirty`] so the caller can warn rather than lose them
+/// quietly.
+pub const MAX_RESTORABLE_DIRTY_BYTES: usize = 4 * 1024 * 1024;
+
+/// Whether a document of `byte_len` bytes is small enough to keep across a
+/// restart.
+#[flutter_rust_bridge::frb(sync)]
+pub fn is_restorable_dirty(byte_len: usize) -> bool {
+    byte_len <= MAX_RESTORABLE_DIRTY_BYTES
+}
+
+/// A persisted tab, mirrored across the frb boundary. Dart builds these from
+/// its tab list.
 pub struct DocRecord {
     pub id: String,
     pub display_name: String,
@@ -28,6 +49,14 @@ pub struct DocRecord {
     pub font_read: f64,
     pub font_tail: f64,
     pub font_edit: f64,
+    /// The document's text, when it has to survive a restart on its own:
+    /// always for a transient scratch document, and for a real file whenever
+    /// it has unsaved edits.
+    ///
+    /// The second case was missing, and it lost work: a real file was reopened
+    /// from disk on restore, so edits made before quitting were silently gone
+    /// and the tab came back clean. See [`is_restorable_dirty`] for the size
+    /// limit that applies to it.
     pub scratch_content: Option<String>,
     /// Epoch day the doc was created (for the atMidnight purge). 0 for real files.
     pub created_day: i64,
@@ -567,6 +596,46 @@ mod tests {
         let loaded = s.load_session(100).unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, "c");
+    }
+
+    #[test]
+    fn the_restorable_limit_is_a_ceiling_not_a_target() {
+        assert!(is_restorable_dirty(0));
+        assert!(is_restorable_dirty(MAX_RESTORABLE_DIRTY_BYTES));
+        assert!(!is_restorable_dirty(MAX_RESTORABLE_DIRTY_BYTES + 1));
+    }
+
+    #[test]
+    fn unsaved_content_persists_for_a_real_file_too() {
+        // The bug this fixes: only transient documents carried their content,
+        // so a real file with unsaved edits was reopened from disk on restore
+        // and came back clean, with the edits gone and no prompt on close.
+        let mut store = store();
+        let mut r = rec("d1", 0, "off", 0);
+        r.is_transient = false;
+        r.scratch_content = Some("edited but not saved".to_string());
+        store.save_session(vec![r]).unwrap();
+
+        let loaded = store.load_session(0).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(!loaded[0].is_transient);
+        assert_eq!(
+            loaded[0].scratch_content.as_deref(),
+            Some("edited but not saved")
+        );
+    }
+
+    #[test]
+    fn a_clean_real_file_stores_no_content() {
+        // The other half: a saved document must not carry a copy of the file
+        // in the session store, and on restore must be read from disk.
+        let mut store = store();
+        let mut r = rec("d1", 0, "off", 0);
+        r.is_transient = false;
+        r.scratch_content = None;
+        store.save_session(vec![r]).unwrap();
+
+        assert_eq!(store.load_session(0).unwrap()[0].scratch_content, None);
     }
 
     #[test]

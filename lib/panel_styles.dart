@@ -31,14 +31,18 @@ class PanelStyles {
   /// MIME's Apply. Different widgets also mean different shapes and heights,
   /// so no amount of colour-matching would have made them agree.
   ///
-  /// Tonal, not primary-filled: a bar carries up to eight of these and they
-  /// are peers. A row of eight primary-coloured buttons is a row with no
-  /// emphasis in it at all, which is the same as having none.
+  /// Primary-filled — the bright one. An earlier version made these tonal, on
+  /// the argument that a bar carries up to eight peers and eight bright
+  /// buttons is a row with no emphasis in it. That was wrong in the app: the
+  /// bars sit on `surfaceContainerHighest`, where a tonal button barely
+  /// separates from its own background, and the MIME bar's bright Apply was
+  /// the one everybody read as correct. Consistency was the ask; this is the
+  /// colour to be consistent *with*.
   static ButtonStyle actionButton(ColorScheme scheme) => FilledButton.styleFrom(
-    backgroundColor: scheme.secondaryContainer,
-    foregroundColor: scheme.onSecondaryContainer,
-    disabledBackgroundColor: scheme.surfaceContainerHigh,
-    disabledForegroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+    backgroundColor: scheme.primary,
+    foregroundColor: scheme.onPrimary,
+    disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
+    disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
     textStyle: const TextStyle(fontSize: fontSize),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     visualDensity: VisualDensity.compact,

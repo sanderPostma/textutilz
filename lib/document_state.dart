@@ -267,9 +267,30 @@ class TabRuntime {
       : session.isDirty();
   double get fontSize => meta.fontSizeFor(meta.viewMode);
 
+  /// The text to persist with this tab, or null to reopen it from disk.
+  ///
+  /// A scratch document always carries its content — it has no file to reopen
+  /// from. A real file carries it only while it has unsaved edits, so that
+  /// quitting with a dirty tab does not throw the work away: the restore path
+  /// reapplies this over the file and the tab comes back dirty.
+  ///
+  /// Above [isRestorableDirty]'s limit it returns null even when dirty, and
+  /// the caller is expected to say so rather than pretend — see
+  /// [dirtyBeyondRestoreLimit].
+  String? persistableContent() {
+    if (meta.isTransient) return session.contentString();
+    if (!session.isDirty()) return null;
+    final text = session.contentString();
+    return isRestorableDirty(byteLen: BigInt.from(text.length)) ? text : null;
+  }
+
+  /// This tab has unsaved edits that are too large to survive a restart.
+  bool get dirtyBeyondRestoreLimit =>
+      !meta.isTransient && session.isDirty() && persistableContent() == null;
+
   /// Snapshot this tab as a persistable [DocRecord]. Scratch (transient) docs
   /// carry their live content so they can be rehydrated on the next launch;
-  /// real files store only their path + view state.
+  /// a real file carries it while it is dirty.
   DocRecord toRecord({required int order, required bool active}) => DocRecord(
     id: meta.id,
     displayName: meta.displayName,
@@ -282,7 +303,7 @@ class TabRuntime {
     fontRead: meta.fontSizeFor(ViewMode.read),
     fontTail: meta.fontSizeFor(ViewMode.tail),
     fontEdit: meta.fontSizeFor(ViewMode.edit),
-    scratchContent: meta.isTransient ? session.contentString() : null,
+    scratchContent: persistableContent(),
     createdDay: meta.createdDay,
     tabOrder: order,
     isActive: active,

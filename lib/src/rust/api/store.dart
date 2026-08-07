@@ -11,6 +11,11 @@ import 'structured.dart';
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DocRow`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
 
+/// Whether a document of `byte_len` bytes is small enough to keep across a
+/// restart.
+bool isRestorableDirty({required BigInt byteLen}) =>
+    RustLib.instance.api.crateApiStoreIsRestorableDirty(byteLen: byteLen);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AppStore>>
 abstract class AppStore implements RustOpaqueInterface {
   /// Fetch a setting value, or None if unset.
@@ -45,8 +50,8 @@ abstract class AppStore implements RustOpaqueInterface {
   void setSetting({required String key, required String value});
 }
 
-/// A persisted tab, mirrored across the frb boundary. Dart builds these from its
-/// tab list; `scratch_content` is `Some` only for transient documents.
+/// A persisted tab, mirrored across the frb boundary. Dart builds these from
+/// its tab list.
 class DocRecord {
   final String id;
   final String displayName;
@@ -61,6 +66,15 @@ class DocRecord {
   final double fontRead;
   final double fontTail;
   final double fontEdit;
+
+  /// The document's text, when it has to survive a restart on its own:
+  /// always for a transient scratch document, and for a real file whenever
+  /// it has unsaved edits.
+  ///
+  /// The second case was missing, and it lost work: a real file was reopened
+  /// from disk on restore, so edits made before quitting were silently gone
+  /// and the tab came back clean. See [`is_restorable_dirty`] for the size
+  /// limit that applies to it.
   final String? scratchContent;
 
   /// Epoch day the doc was created (for the atMidnight purge). 0 for real files.

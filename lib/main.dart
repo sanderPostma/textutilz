@@ -527,6 +527,14 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
         } else {
           if (!File(r.path).existsSync()) continue; // real file gone — skip
           session = EditSession.open(path: r.path);
+          // Unsaved edits from the last run. Reapplying them over the file's
+          // contents is what makes the tab come back *dirty* — before this,
+          // quitting with a dirty tab reopened the file clean and the work was
+          // gone, with no prompt on the way out or the way back in.
+          final unsaved = r.scratchContent;
+          if (unsaved != null && unsaved != session.contentString()) {
+            session.replaceAll(text: unsaved);
+          }
         }
         applyUndoSettingToText(session);
         DocumentMeta.reserveId(r.id);
@@ -970,6 +978,13 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     // Persist first (captures scratch content from the live session), then clear
     // the on-disk scratch files for onAppClose docs — their content stays in the
     // DB and is rehydrated on the next launch.
+    // Unsaved work that will not survive the restart, because it is too large
+    // to keep in the session store. Everything smaller is persisted and comes
+    // back dirty, so this is the only case that needs asking about.
+    final unsavable = _tabs.where((t) => t.dirtyBeyondRestoreLimit).toList();
+    if (unsavable.isNotEmpty && !await _confirmQuitWithUnsavable(unsavable)) {
+      return;
+    }
     _persistSession();
     // Before destroy(): a pending debounce would never fire, and the maximized
     // flag is most often set by the very last thing the user did.
@@ -978,6 +993,38 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       if (tab.meta.autoDelete == AutoDelete.onAppClose) _deleteScratchFile(tab);
     }
     await windowManager.destroy();
+  }
+
+  /// Ask before quitting on unsaved changes that cannot be kept.
+  ///
+  /// Deliberately not a Save-all: saving can open a file dialog per document
+  /// and fail halfway, which is a poor thing to start during shutdown. Naming
+  /// the documents and letting the user go back is enough — from there the
+  /// normal Ctrl+S works.
+  Future<bool> _confirmQuitWithUnsavable(List<TabRuntime> tabs) async {
+    final names = tabs.map((t) => t.name).join(', ');
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unsaved changes will be lost'),
+        content: Text(
+          '${tabs.length == 1 ? 'This document is' : 'These documents are'} '
+          'too large to keep unsaved changes across a restart:\n\n$names\n\n'
+          'Smaller documents are restored with their changes intact.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Go back'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quit anyway'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? false;
   }
 
   void _scheduleMidnightCleanup() {

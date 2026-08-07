@@ -48,9 +48,14 @@ class AppShellHarness {
   /// Each document is written to a real temp file, because the shell opens
   /// non-transient documents through `EditSession.open` and skips any whose
   /// path is missing.
+  /// [documents] is name → the text written to the file on disk.
+  /// [unsavedContent] is name → text the store carries as *unsaved* edits, the
+  /// way it would after quitting with a dirty tab. Both together are how a
+  /// restart with unsaved work is reproduced.
   static Future<AppShellHarness> pump(
     WidgetTester tester, {
     required Map<String, String> documents,
+    Map<String, String> unsavedContent = const {},
     String viewMode = ViewMode.edit,
   }) async {
     final id = _counter++;
@@ -84,7 +89,7 @@ class AppShellHarness {
           fontRead: 14,
           fontTail: 14,
           fontEdit: 14,
-          scratchContent: null,
+          scratchContent: unsavedContent[entry.key],
           createdDay: 0,
           tabOrder: order,
           isActive: order == 0,
