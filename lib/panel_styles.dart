@@ -59,16 +59,10 @@ class PanelStyles {
     side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
   );
 
-  /// The one button on a bar that is *not* a peer: MIME's Apply, which runs
-  /// the transform the rest of the bar has been configuring. Primary-filled,
-  /// because here the emphasis means something.
-  static ButtonStyle primaryButton(ColorScheme scheme) =>
-      FilledButton.styleFrom(
-        textStyle: const TextStyle(fontSize: fontSize),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        minimumSize: Size.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      );
+  /// MIME's Apply once had a style of its own — primary-filled, on the
+  /// argument that it is the one button on its bar that is not a peer. In the
+  /// app that argument lost: a lavender `primary` pill next to
+  /// `secondaryContainer` ones does not read as "this one matters", it reads
+  /// as "these were built by different people". [actionButton] is the only
+  /// button style now.
 }

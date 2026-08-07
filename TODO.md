@@ -100,7 +100,11 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
       - **Ctrl+Tab's overlay**, which depends on the Ctrl key-up reaching the
         shell through real GTK key handling.
       - **The tool-bar button restyle**, which is a judgement about how it
-        looks, not a property a test can assert.
+        looks. Note that "do they all match" *is* now asserted — see
+        `every action button on every bar is styled identically` in
+        `test/tool_bar_layout_test.dart`, added after two rounds of
+        eyeballing missed that MIME's Apply was still on Material's default
+        `primary`.
 
 ---
 

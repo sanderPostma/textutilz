@@ -56,6 +56,52 @@ void main() {
     expect(find.text('Base64 Encode'), findsOneWidget);
   });
 
+  testWidgets('every action button on every bar is styled identically', (
+    tester,
+  ) async {
+    // Two rounds of "make the buttons consistent" missed this, because the
+    // bars were compared by eye one at a time. MIME's Apply kept Material's
+    // default FilledButton styling — `primary`, a light lavender — while the
+    // edit and structured bars had moved to `secondaryContainer`. Resolving
+    // the styles and comparing them is the check that does not depend on
+    // noticing.
+    tester.view.physicalSize = const Size(1200, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final backgrounds = <String, Set<Color?>>{};
+    for (final id in [
+      'edit.blank',
+      'edit.case',
+      'structured.json',
+      'structured.xml',
+      'mime.base64.encode',
+      'mime.url.decode',
+    ]) {
+      await tester.pumpWidget(host(id));
+      await tester.pumpAndSettle();
+      backgrounds[id] = tester
+          .widgetList<FilledButton>(find.byType(FilledButton))
+          .map((b) => b.style?.backgroundColor?.resolve(<WidgetState>{}))
+          .toSet();
+    }
+
+    for (final entry in backgrounds.entries) {
+      expect(
+        entry.value,
+        isNot(contains(null)),
+        reason:
+            '${entry.key} has a button on Material default styling; every '
+            'action button must come from PanelStyles',
+      );
+    }
+    expect(
+      backgrounds.values.expand((s) => s).toSet(),
+      hasLength(1),
+      reason: 'all bars should agree on one action-button colour',
+    );
+  });
+
   testWidgets('the MIME title tab follows the Encode/Decode selector', (
     tester,
   ) async {

@@ -492,7 +492,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
             'Apply · ${_currentOp.label}',
             style: const TextStyle(fontSize: 13),
           ),
-          style: PanelStyles.primaryButton(scheme),
+          style: PanelStyles.actionButton(scheme),
           onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
         ),
       ],
