@@ -519,16 +519,19 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       try {
         final EditSession session;
         if (r.isTransient) {
-          // Open the scratch file rather than rewriting it. `createScratch`
-          // *writes* its content before opening, which makes that content the
-          // document's baseline — so restoring a scratch buffer this way came
-          // back clean, and the unsaved marker the user saw before quitting
-          // was gone. A scratch buffer is never saved to its own file (Save
-          // prompts Save As and the document stops being transient), so the
-          // file on disk is the baseline and the persisted text is the edit.
-          session = File(r.path).existsSync()
-              ? EditSession.open(path: r.path)
-              : EditSession.createScratch(path: r.path, content: '');
+          // Start from an *empty* buffer and let the reapply below put the
+          // text in, so the document is dirty exactly when it has unsaved
+          // content. `createScratch` writes its argument to the file before
+          // opening it, so passing the text here would make it the baseline
+          // and the tab would come back clean — which is precisely the bug
+          // that lost the unsaved marker.
+          //
+          // The store is the source of truth for a scratch buffer: its file is
+          // deleted at app close (see `onWindowClose`) and exists only as the
+          // working copy the running session reads lines from. An existing one
+          // is therefore a leftover from a crash, and is treated as an empty
+          // baseline too rather than trusted.
+          session = EditSession.createScratch(path: r.path, content: '');
         } else {
           if (!File(r.path).existsSync()) continue; // real file gone — skip
           session = EditSession.open(path: r.path);
@@ -979,9 +982,8 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
 
   @override
   void onWindowClose() async {
-    // Persist first (captures scratch content from the live session), then clear
-    // the on-disk scratch files for onAppClose docs — their content stays in the
-    // DB and is rehydrated on the next launch.
+    // Persist first (captures scratch content from the live session), then
+    // clear the on-disk scratch files.
     // Unsaved work that will not survive the restart, because it is too large
     // to keep in the session store. Everything smaller is persisted and comes
     // back dirty, so this is the only case that needs asking about.
@@ -993,8 +995,16 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     // Before destroy(): a pending debounce would never fire, and the maximized
     // flag is most often set by the very last thing the user did.
     await _writeWindowGeometry();
+    // Every scratch file goes, not only the onAppClose ones. Their content is
+    // in the store — `_persistSession` above just wrote it — and the file is
+    // only a working copy the running session reads lines from. Leaving them
+    // behind meant the scratch directory grew a file per buffer forever, and
+    // gave a restored document two sources of truth that could disagree.
+    //
+    // Order matters: persist, then delete. Reversed, a failed write would take
+    // the content with it.
     for (final tab in _tabs) {
-      if (tab.meta.autoDelete == AutoDelete.onAppClose) _deleteScratchFile(tab);
+      _deleteScratchFile(tab);
     }
     await windowManager.destroy();
   }

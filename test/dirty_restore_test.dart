@@ -117,6 +117,29 @@ void main() {
     expect(editorOf(tester).widget.session.isDirty(), isFalse);
   });
 
+  testWidgets('a scratch buffer needs no file on disk to restore', (
+    tester,
+  ) async {
+    // The store is the source of truth for scratch content, so the working
+    // file in the scratch directory is deleted at app close. Restoring must
+    // not depend on it: this is the same case as the file having been cleaned
+    // up, and the document has to come back regardless — with its text and its
+    // unsaved marker.
+    final harness = await AppShellHarness.pump(
+      tester,
+      documents: {'new 16': ''},
+      unsavedContent: {'new 16': 'lives in the database'},
+      transient: {'new 16'},
+      deleteFilesBeforePump: true,
+    );
+    await tester.pumpAndSettle();
+
+    final session = editorOf(tester).widget.session;
+    expect(session.contentString(), 'lives in the database');
+    expect(session.isDirty(), isTrue);
+    expect(harness.persistedSession(), hasLength(1));
+  });
+
   testWidgets('a clean restore leaves the document undirtied', (tester) async {
     // The guard on the reapply: rewriting content identical to the file would
     // mark a clean tab dirty and prompt on close for nothing.

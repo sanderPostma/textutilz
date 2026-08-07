@@ -53,12 +53,17 @@ class AppShellHarness {
   /// way it would after quitting with a dirty tab. Both together are how a
   /// restart with unsaved work is reproduced.
   /// [transient] names the documents restored as scratch buffers rather than
-  /// real files; their on-disk file is the baseline they are dirty against.
+  /// real files.
+  /// [deleteFilesBeforePump] removes the files again after the records are
+  /// written, reproducing a scratch buffer whose working file was cleaned up
+  /// at app close — the state the store is expected to restore from on its
+  /// own.
   static Future<AppShellHarness> pump(
     WidgetTester tester, {
     required Map<String, String> documents,
     Map<String, String> unsavedContent = const {},
     Set<String> transient = const {},
+    bool deleteFilesBeforePump = false,
     String viewMode = ViewMode.edit,
   }) async {
     final id = _counter++;
@@ -103,6 +108,13 @@ class AppShellHarness {
       order++;
     }
     store.saveSession(docs: records);
+    if (deleteFilesBeforePump) {
+      for (final path in files) {
+        try {
+          File(path).deleteSync();
+        } catch (_) {}
+      }
+    }
     app.appStore = store;
 
     tester.view.physicalSize = windowSize;
