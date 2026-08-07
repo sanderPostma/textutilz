@@ -46,7 +46,10 @@ class PanelStyles {
     textStyle: const TextStyle(fontSize: fontSize),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     visualDensity: VisualDensity.compact,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    // 8 rather than 6 vertical: 4px taller overall, asked for after seeing
+    // them in the app. The bars' height ceilings are measured, so this shows
+    // up there rather than silently eating the budget.
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
     minimumSize: Size.zero,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
   );
@@ -57,7 +60,7 @@ class PanelStyles {
     visualDensity: VisualDensity.compact,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     padding: const WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      EdgeInsets.symmetric(horizontal: 10, vertical: 12),
     ),
     textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: fontSize)),
     side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),

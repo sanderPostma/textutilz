@@ -191,20 +191,20 @@ void main() {
   /// The `mimeHasSelection: false` host is used deliberately: the
   /// "⚠️ Transforms the whole document." notice is the longer of the two.
   const heightCeilingsAt800 = <String, double>{
-    'edit.case': 76,
-    'edit.eol': 49,
+    'edit.case': 100,
+    'edit.eol': 50,
     // 8 long labels; this one is still the worst case by a wide margin.
-    'edit.blank': 93,
-    'edit.comment': 76,
-    'mime.base64.encode': 82,
-    'mime.base64.decode': 82,
-    'mime.qp.encode': 81,
-    'mime.qp.decode': 81,
-    'mime.url.encode': 113,
+    'edit.blank': 125,
+    'edit.comment': 100,
+    'mime.base64.encode': 89,
+    'mime.base64.decode': 89,
+    'mime.qp.encode': 89,
+    'mime.qp.decode': 89,
+    'mime.url.encode': 121,
     // Decode hides the RFC1738/Extended/Full selector, so this is shorter
     // than url.encode.
-    'mime.url.decode': 81,
-    'mime.saml.decode': 84,
+    'mime.url.decode': 89,
+    'mime.saml.decode': 91,
     // The tabbed bar: a tab row plus the selected category's option run.
     'mime': 117,
     // Five operation buttons, the scope note, a divider, and the auto-validate
@@ -221,9 +221,9 @@ void main() {
     // went 161 to 93px on that change alone, and the one-row floor reached
     // 49px — under the spec's ~52px, which two rounds of chrome-tuning had not
     // managed.
-    'structured.json': 125,
-    'structured.yaml': 109,
-    'structured.xml': 109,
+    'structured.json': 129,
+    'structured.yaml': 121,
+    'structured.xml': 121,
   };
 
   Widget heightHost(String panelId) => MaterialApp(

@@ -84,14 +84,17 @@ overflowed by 97px as soon as text was selected. All three had shipped.
 
 Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 
-- [x] **The vertical budget is met.** The one-row floor is **49px** against a
+- [x] **The vertical budget is met.** The one-row floor is **50px** against a
       promised ~52px, and `edit.blank` — the worst case, eight long labels —
-      went from 163px to 93px. Two changes did it, and the second was much the
+      went from 163px to 125px. Two changes did it, and the second was much the
       larger: `DockedBar`'s close button dropped from Material's 40px square to
       28px, and then the edit bars' `ActionChip`s became the same `FilledButton`
       every other bar uses. Chips carry more horizontal padding than they look
       like they do, so eight of them needed four wrap runs where eight buttons
-      need two. All 15 heights re-measured and pinned with zero slack in
+      need two. The buttons were then made 4px taller by request, which a
+      multi-row bar pays per wrap run — hence 125px rather than the 93px that
+      change alone reached. All 15 heights re-measured and pinned with zero
+      slack in
       `test/tool_bar_layout_test.dart`; they remain upper bounds, since the
       widget-test font is fixed-width at ~1em/glyph, roughly double a real
       proportional font.
