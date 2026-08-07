@@ -136,6 +136,28 @@ void main() {
     expect(editor.widget.session.contentString(), before);
   });
 
+  testWidgets('Fold All from the View menu closes the ribbon', (tester) async {
+    // Fold All is a one-shot command, and leaving the ribbon open over the
+    // result hid the only thing the user asked to see.
+    final editor = await openJson(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyX);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('Fold All'), findsOneWidget);
+
+    await tester.tap(find.text('Fold All'));
+    await tester.pumpAndSettle();
+
+    expect(editor.displayRowCount, 1, reason: 'the command should have run');
+    expect(
+      find.text('Fold All'),
+      findsNothing,
+      reason: 'the ribbon should have closed behind it',
+    );
+  });
+
   testWidgets('a plain document ignores the fold keys', (tester) async {
     await AppShellHarness.pump(
       tester,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'panel_styles.dart';
+
 import 'markup_styling.dart';
 import 'panel_scope_note.dart';
 import 'src/rust/api/structured.dart';
@@ -131,7 +133,8 @@ class StructuredToolsPanel extends StatelessWidget {
 
   /// True when this bar's format has dialects to choose between.
   bool get supportsJson5 =>
-      language == StructuredLanguage.json || language == StructuredLanguage.json5;
+      language == StructuredLanguage.json ||
+      language == StructuredLanguage.json5;
 
   /// The format operations actually run against, after the dialect switch.
   StructuredLanguage get effectiveLanguage =>
@@ -158,21 +161,25 @@ class StructuredToolsPanel extends StatelessWidget {
             onChanged: onUseJson5Changed,
           ),
         _button(
+          scheme: scheme,
           action: StructuredTextAction.prettyPrint,
           icon: Icons.format_align_left,
           text: 'Pretty-print',
         ),
         _button(
+          scheme: scheme,
           action: StructuredTextAction.compact,
           icon: Icons.compress,
           text: 'Compact / minify',
         ),
         _button(
+          scheme: scheme,
           action: StructuredTextAction.escape,
           icon: Icons.code,
           text: 'Escape',
         ),
         _button(
+          scheme: scheme,
           action: StructuredTextAction.unescape,
           icon: Icons.code_off,
           text: 'Unescape',
@@ -186,6 +193,7 @@ class StructuredToolsPanel extends StatelessWidget {
         ),
         const _BarDivider(),
         _button(
+          scheme: scheme,
           action: StructuredTextAction.validate,
           icon: Icons.fact_check_outlined,
           text: 'Validate',
@@ -206,6 +214,7 @@ class StructuredToolsPanel extends StatelessWidget {
   }
 
   Widget _button({
+    required ColorScheme scheme,
     required StructuredTextAction action,
     required IconData icon,
     required String text,
@@ -220,7 +229,7 @@ class StructuredToolsPanel extends StatelessWidget {
           : null,
       icon: Icon(icon, size: 16),
       label: Text(text),
-      style: _denseButton,
+      style: PanelStyles.primaryButton(scheme),
     );
     if (active || disabledTooltip == null) return button;
     return Tooltip(message: disabledTooltip, child: button);

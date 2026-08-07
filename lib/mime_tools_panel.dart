@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'panel_styles.dart';
+
 import 'panel_scope_note.dart';
 import 'package:textutilz/src/rust/api/mime_tools.dart';
 
@@ -92,15 +94,6 @@ final ButtonStyle _denseFilledStyle = FilledButton.styleFrom(
   minimumSize: Size.zero,
 );
 
-const ButtonStyle _denseSegmented = ButtonStyle(
-  visualDensity: VisualDensity.compact,
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  padding: WidgetStatePropertyAll(
-    EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-  ),
-  textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
-);
-
 /// A checkbox styled to sit inline in a bar's wrap run.
 Widget _mimeCheck(String label, bool value, ValueChanged<bool> onChanged) {
   return InkWell(
@@ -130,7 +123,11 @@ Widget _mimeCheck(String label, bool value, ValueChanged<bool> onChanged) {
 }
 
 /// Encode | Decode segmented control, shared by the categories that have both.
-Widget _mimeModeSelector(bool decode, ValueChanged<bool> onChanged) {
+Widget _mimeModeSelector(
+  bool decode,
+  ValueChanged<bool> onChanged,
+  ColorScheme scheme,
+) {
   return SegmentedButton<bool>(
     segments: const [
       ButtonSegment(
@@ -146,7 +143,7 @@ Widget _mimeModeSelector(bool decode, ValueChanged<bool> onChanged) {
     ],
     selected: {decode},
     showSelectedIcon: false,
-    style: _denseSegmented,
+    style: PanelStyles.segmented(scheme),
     onSelectionChanged: (s) => onChanged(s.first),
   );
 }
@@ -281,7 +278,11 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
     switch (_tab) {
       case MimeCategory.base64:
         return [
-          _mimeModeSelector(_b64Decode, (v) => setState(() => _b64Decode = v)),
+          _mimeModeSelector(
+            _b64Decode,
+            (v) => setState(() => _b64Decode = v),
+            scheme,
+          ),
           if (_b64Decode) ...[
             _mimeCheck(
               'Strict',
@@ -308,11 +309,19 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
         ];
       case MimeCategory.quotedPrintable:
         return [
-          _mimeModeSelector(_qpDecode, (v) => setState(() => _qpDecode = v)),
+          _mimeModeSelector(
+            _qpDecode,
+            (v) => setState(() => _qpDecode = v),
+            scheme,
+          ),
         ];
       case MimeCategory.url:
         return [
-          _mimeModeSelector(_urlDecode, (v) => setState(() => _urlDecode = v)),
+          _mimeModeSelector(
+            _urlDecode,
+            (v) => setState(() => _urlDecode = v),
+            scheme,
+          ),
           if (!_urlDecode) ...[
             SegmentedButton<UrlEncodeVariant>(
               segments: const [
@@ -331,7 +340,7 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
               ],
               selected: {_urlVariant},
               showSelectedIcon: false,
-              style: _denseSegmented,
+              style: PanelStyles.segmented(scheme),
               onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
             ),
             _mimeCheck(
@@ -483,7 +492,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
             'Apply · ${_currentOp.label}',
             style: const TextStyle(fontSize: 13),
           ),
-          style: _denseButtonStyle,
+          style: PanelStyles.primaryButton(scheme),
           onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
         ),
       ],
@@ -494,22 +503,6 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   /// tall on its own, well over the docked bar's height budget (see the
   /// ceilings in test/tool_bar_layout_test.dart). shrinkWrap + compact density
   /// brings a run to ~32px while keeping the controls comfortably clickable.
-  static final ButtonStyle _denseButtonStyle = FilledButton.styleFrom(
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    visualDensity: VisualDensity.compact,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    minimumSize: Size.zero,
-  );
-
-  static const ButtonStyle _denseSegmentedStyle = ButtonStyle(
-    visualDensity: VisualDensity.compact,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    padding: WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    ),
-    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
-  );
-
   List<Widget> _optionWidgets(ColorScheme scheme) {
     switch (widget.category) {
       case MimeCategory.base64:
@@ -524,6 +517,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
   }
 
   Widget _modeSelector(bool decode, ValueChanged<bool> onChanged) {
+    final scheme = Theme.of(context).colorScheme;
     return SegmentedButton<bool>(
       segments: const [
         ButtonSegment(
@@ -539,7 +533,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
       ],
       selected: {decode},
       showSelectedIcon: false,
-      style: _denseSegmentedStyle,
+      style: PanelStyles.segmented(scheme),
       onSelectionChanged: (s) => onChanged(s.first),
     );
   }
@@ -607,7 +601,7 @@ class _SingleMimeToolPanelState extends State<SingleMimeToolPanel> {
           ],
           selected: {_urlVariant},
           showSelectedIcon: false,
-          style: _denseSegmentedStyle,
+          style: PanelStyles.segmented(scheme),
           onSelectionChanged: (s) => setState(() => _urlVariant = s.first),
         ),
         _check('By line', _urlByLine, (v) => setState(() => _urlByLine = v)),

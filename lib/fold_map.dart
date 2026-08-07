@@ -125,7 +125,9 @@ class FoldMap {
         high = mid - 1;
       } else {
         // This interval starts at or before `row`; count what it hides up to it.
-        final upTo = row <= range.last ? row - range.first : range.last - range.first + 1;
+        final upTo = row <= range.last
+            ? row - range.first
+            : range.last - range.first + 1;
         hidden = _hiddenBefore[mid] + upTo;
         low = mid + 1;
       }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'panel_styles.dart';
 import 'package:flutter/services.dart';
 
 import 'docked_bar.dart';
@@ -171,7 +173,7 @@ class HexFindPanelState extends State<HexFindPanel> {
             selected: {c.format},
             onSelectionChanged: (value) => c.setFormat(value.first),
             showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            style: PanelStyles.segmented(Theme.of(context).colorScheme),
           ),
           IconButton(
             key: const Key('hex-find-previous'),

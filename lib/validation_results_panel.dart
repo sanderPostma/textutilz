@@ -147,7 +147,9 @@ class _ValidationResultsPanelState extends State<ValidationResultsPanel> {
             child: Row(
               children: [
                 Icon(
-                  hasProblems ? Icons.error_outline : Icons.check_circle_outline,
+                  hasProblems
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
                   size: 16,
                   color: hasProblems
                       ? MarkupStyling.diagnosticUnderline(
@@ -179,14 +181,12 @@ class _ValidationResultsPanelState extends State<ValidationResultsPanel> {
                   _scrollButton(
                     tooltip: 'Page up',
                     icon: Icons.keyboard_arrow_up,
-                    onPressed: () =>
-                        _scrollTo(_scroll.offset - _rowExtent * 5),
+                    onPressed: () => _scrollTo(_scroll.offset - _rowExtent * 5),
                   ),
                   _scrollButton(
                     tooltip: 'Page down',
                     icon: Icons.keyboard_arrow_down,
-                    onPressed: () =>
-                        _scrollTo(_scroll.offset + _rowExtent * 5),
+                    onPressed: () => _scrollTo(_scroll.offset + _rowExtent * 5),
                   ),
                   _scrollButton(
                     tooltip: 'Bottom',

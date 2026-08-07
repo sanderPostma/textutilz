@@ -889,54 +889,62 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
   /// one store write.
   Timer? _geometryDebounce;
 
-  /// Remember where the window is, unless it is maximized or minimized — in
-  /// those states the reported bounds are the maximized ones, and saving them
-  /// would lose the size to restore *to* when the user un-maximizes next run.
-  void _saveWindowGeometry() {
+  /// The last bounds the window had while *not* maximized.
+  ///
+  /// This is what has to be persisted, because a maximized window reports the
+  /// maximized bounds and saving those would lose the size to un-maximize back
+  /// to. Kept in memory rather than read back from the store, which is what
+  /// the first version got wrong: it tried to reuse the previously *stored*
+  /// size and simply gave up when there was none, so maximizing and quitting
+  /// on a fresh install saved nothing at all and the window came back small.
+  Rect? _lastNormalBounds;
+
+  /// Persist the window's geometry, debounced.
+  ///
+  /// Pass `immediate: true` on shutdown: the 400 ms debounce is there for the
+  /// burst of callbacks a drag produces, and waiting it out is exactly what
+  /// the closing app does not do.
+  void _saveWindowGeometry({bool immediate = false}) {
     _geometryDebounce?.cancel();
-    _geometryDebounce = Timer(const Duration(milliseconds: 400), () async {
-      final store = appStore;
-      if (store == null) return;
-      try {
-        final maximized = await windowManager.isMaximized();
-        if (maximized || await windowManager.isMinimized()) {
-          // Record only the flag; the previous size stays as it was.
-          final stored = store.getSetting(key: kWindowGeometrySetting);
-          final previous = stored == null
-              ? null
-              : parseWindowGeometry(value: stored);
-          if (previous == null) return;
-          store.setSetting(
-            key: kWindowGeometrySetting,
-            value: encodeWindowGeometry(
-              geometry: WindowGeometry(
-                x: previous.x,
-                y: previous.y,
-                width: previous.width,
-                height: previous.height,
-                maximized: maximized,
-              ),
-            ),
-          );
-          return;
-        }
+    if (immediate) {
+      _writeWindowGeometry();
+      return;
+    }
+    _geometryDebounce = Timer(
+      const Duration(milliseconds: 400),
+      _writeWindowGeometry,
+    );
+  }
+
+  Future<void> _writeWindowGeometry() async {
+    final store = appStore;
+    if (store == null) return;
+    try {
+      final maximized = await windowManager.isMaximized();
+      if (!maximized && !await windowManager.isMinimized()) {
         final bounds = await windowManager.getBounds();
-        store.setSetting(
-          key: kWindowGeometrySetting,
-          value: encodeWindowGeometry(
-            geometry: WindowGeometry(
-              x: bounds.left,
-              y: bounds.top,
-              width: bounds.width,
-              height: bounds.height,
-              maximized: false,
-            ),
-          ),
-        );
-      } catch (e) {
-        debugPrint('window geometry save failed: $e');
+        _lastNormalBounds = bounds;
       }
-    });
+      // With no normal bounds yet — maximized before the window was ever
+      // moved or sized — fall back to the current bounds. They are the
+      // maximized ones, which is a poor size to restore to but a great deal
+      // better than storing nothing and losing the maximized flag with it.
+      final bounds = _lastNormalBounds ?? await windowManager.getBounds();
+      store.setSetting(
+        key: kWindowGeometrySetting,
+        value: encodeWindowGeometry(
+          geometry: WindowGeometry(
+            x: bounds.left,
+            y: bounds.top,
+            width: bounds.width,
+            height: bounds.height,
+            maximized: maximized,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('window geometry save failed: $e');
+    }
   }
 
   @override
@@ -963,6 +971,9 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     // the on-disk scratch files for onAppClose docs — their content stays in the
     // DB and is rehydrated on the next launch.
     _persistSession();
+    // Before destroy(): a pending debounce would never fire, and the maximized
+    // flag is most often set by the very last thing the user did.
+    await _writeWindowGeometry();
     for (final tab in _tabs) {
       if (tab.meta.autoDelete == AutoDelete.onAppClose) _deleteScratchFile(tab);
     }
@@ -1926,6 +1937,20 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
     });
   }
 
+  /// Run a View-menu fold action, then close the ribbon and hand focus back.
+  ///
+  /// Fold All and Unfold All are one-shot commands, so leaving the ribbon open
+  /// over the result — which is the whole document changing shape — hid the
+  /// only thing the user asked to see. The toggles above them (line numbers,
+  /// word wrap) deliberately keep it open, because those get flipped in pairs.
+  void _runFoldAction(void Function(CustomEditorState) action) {
+    final editor = _activeEditor;
+    if (editor == null) return;
+    action(editor);
+    setState(() => _isRibbonVisible = false);
+    editor.focusEditor();
+  }
+
   /// Run a ribbon Edit-menu action against the active editor, then close the
   /// ribbon (focus returns to the editor inside the action itself).
   void _runEditAction(void Function(CustomEditorState) action) {
@@ -2771,10 +2796,10 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
                         onToggleLineNumbers: _toggleLineNumbers,
                         onToggleWordWrap: _toggleWordWrap,
                         onFoldAll: _activeEditor?.hasFolds == true
-                            ? () => _activeEditor?.foldAll()
+                            ? () => _runFoldAction((e) => e.foldAll())
                             : null,
                         onUnfoldAll: _activeEditor?.hasFolds == true
-                            ? () => _activeEditor?.unfoldAll()
+                            ? () => _runFoldAction((e) => e.unfoldAll())
                             : null,
                         mimeToolsEnabled: _editToolsAvailable,
                         mimeHasSelection:

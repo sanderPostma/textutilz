@@ -91,7 +91,9 @@ class DockedBar extends StatelessWidget {
     tooltip: 'Close (Esc)',
     onPressed: onClose,
     visualDensity: VisualDensity.compact,
-    style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+    style: IconButton.styleFrom(
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
     padding: EdgeInsets.zero,
     constraints: const BoxConstraints.tightFor(width: 28, height: 28),
   );
