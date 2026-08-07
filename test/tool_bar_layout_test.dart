@@ -70,6 +70,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final backgrounds = <String, Set<Color?>>{};
+    final shapes = <String, Set<OutlinedBorder?>>{};
     for (final id in [
       'edit.blank',
       'edit.case',
@@ -77,12 +78,21 @@ void main() {
       'structured.xml',
       'mime.base64.encode',
       'mime.url.decode',
+      // The tabbed bar belongs here: its Apply was the last button still on
+      // Material's defaults, which made it stadium-shaped next to the 6px
+      // corners everywhere else.
+      ToolBar.mimeAllId,
     ]) {
       await tester.pumpWidget(host(id));
       await tester.pumpAndSettle();
-      backgrounds[id] = tester
-          .widgetList<FilledButton>(find.byType(FilledButton))
+      final buttons = tester.widgetList<FilledButton>(
+        find.byType(FilledButton),
+      );
+      backgrounds[id] = buttons
           .map((b) => b.style?.backgroundColor?.resolve(<WidgetState>{}))
+          .toSet();
+      shapes[id] = buttons
+          .map((b) => b.style?.shape?.resolve(<WidgetState>{}))
           .toSet();
     }
 
@@ -99,6 +109,11 @@ void main() {
       backgrounds.values.expand((s) => s).toSet(),
       hasLength(1),
       reason: 'all bars should agree on one action-button colour',
+    );
+    expect(
+      shapes.values.expand((s) => s).toSet(),
+      hasLength(1),
+      reason: 'and on one corner radius — Material default is a stadium',
     );
   });
 
@@ -205,8 +220,10 @@ void main() {
     // than url.encode.
     'mime.url.decode': 89,
     'mime.saml.decode': 91,
-    // The tabbed bar: a tab row plus the selected category's option run.
-    'mime': 117,
+    // The tabbed bar: a tab row plus the selected category's option run. Its
+    // Apply button was the last one on Material's own defaults — stadium
+    // shaped, and a wrap run taller once it joined the shared style.
+    'mime': 122,
     // Five operation buttons, the scope note, a divider, and the auto-validate
     // switch do not fit on one run at 800px. JSON is the tallest because it
     // also carries the JSON5 dialect switch. These were 86px when the bar held

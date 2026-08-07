@@ -83,17 +83,6 @@ class MimeOp {
   }
 }
 
-/// Material's default 48px tap target makes each wrap run 48px tall on its
-/// own, well over the docked bar's height budget (see the ceilings in
-/// test/tool_bar_layout_test.dart). shrinkWrap + compact density brings a run
-/// to ~32px while keeping the controls comfortably clickable.
-final ButtonStyle _denseFilledStyle = FilledButton.styleFrom(
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  visualDensity: VisualDensity.compact,
-  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-  minimumSize: Size.zero,
-);
-
 /// A checkbox styled to sit inline in a bar's wrap run.
 Widget _mimeCheck(String label, bool value, ValueChanged<bool> onChanged) {
   return InkWell(
@@ -261,11 +250,8 @@ class _MimeToolsPanelState extends State<MimeToolsPanel> {
               // Live label: the tabs and the Encode/Decode selector both
               // change which operation this runs, so a constant 'Apply'
               // would lie about what the button does.
-              label: Text(
-                'Apply · ${_currentOp.label}',
-                style: const TextStyle(fontSize: 13),
-              ),
-              style: _denseFilledStyle,
+              label: Text('Apply · ${_currentOp.label}'),
+              style: PanelStyles.actionButton(scheme),
               onPressed: widget.enabled ? () => widget.onRun(_currentOp) : null,
             ),
           ],
