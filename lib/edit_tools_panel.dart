@@ -77,36 +77,18 @@ class EditToolsPanel extends StatelessWidget {
       EditCategory.commentOps => _commentOps,
     };
     final scheme = Theme.of(context).colorScheme;
-    final theme = PanelStyles.chip(scheme);
     return Wrap(
       spacing: 6,
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: ops
           .map(
-            (op) => ActionChip(
-              label: Text(
-                op.$2,
-                style: theme.labelStyle?.copyWith(
-                  color: enabled ? null : PanelStyles.disabledLabel(scheme),
-                ),
-              ),
-              backgroundColor: theme.backgroundColor,
-              disabledColor: theme.disabledColor,
-              side: theme.side,
-              shape: theme.shape,
-              // The docked bar has a height budget (see the height ceilings
-              // in test/tool_bar_layout_test.dart). Material's default chip
-              // carries a 48px tap target, which makes every wrap run 48px
-              // tall on its own; shrinkWrap + compact density brings a run
-              // down to ~32px while keeping the chip comfortably clickable.
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-              labelPadding: theme.labelPadding,
-              padding: theme.padding,
+            (op) => FilledButton(
+              style: PanelStyles.actionButton(scheme),
               onPressed: enabled
                   ? () => onRun(EditOp(opId: op.$1, label: op.$2))
                   : null,
+              child: Text(op.$2),
             ),
           )
           .toList(),

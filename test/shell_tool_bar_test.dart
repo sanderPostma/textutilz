@@ -131,6 +131,15 @@ void main() {
     });
   });
 
+  // Focus after opening a bar is deliberately NOT tested here. `_openToolBar`
+  // hands focus back to the editor for every bar except Go to Line, which owns a
+  // field — but under the test binding focus lands in the editor by itself, and
+  // the shell's root Focus receives key events even when nothing below it is
+  // focused. Both the "Alt+X still works" and "focus is inside the editor"
+  // phrasings passed with the production code deleted. A test that cannot fail is
+  // worse than none, so it is a manual check (§1 of TODO.md) until the harness
+  // can drive real focus traversal.
+
   group('the live selection marker', () {
     /// Open a MIME bar from the ribbon, which is where its scope note is
     /// rendered.

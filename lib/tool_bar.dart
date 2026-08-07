@@ -64,6 +64,18 @@ class ToolBar extends StatefulWidget {
   /// Go to line bar id.
   static const String gotoId = 'search.goto';
 
+  /// Whether this bar owns the keyboard once it opens.
+  ///
+  /// Only bars with something to type into do. Go to Line is the one here —
+  /// its field autofocuses, and stealing that back would make the bar useless.
+  /// Every other bar is buttons and switches, with nothing focusable in it, so
+  /// leaving focus on the dismissed ribbon stranded the global shortcuts: after
+  /// opening a tool bar from the menu, Alt+X no longer reopened it.
+  ///
+  /// The find bar is not listed because it is not a [ToolBar]; `_openFind`
+  /// focuses its query field for the same reason.
+  static bool ownsFocus(String panelId) => panelId == gotoId;
+
   /// Panel ids that dock as a bar. Everything else stays in the ribbon.
   static bool handles(String panelId) =>
       panelId == gotoId ||

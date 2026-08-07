@@ -1761,6 +1761,21 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       _isFindVisible = false;
       _activeToolPanelId = panelId;
     });
+    // Hand focus back to the editor — unless the bar has something to type
+    // into. The ribbon that was just dismissed owned focus (its search field
+    // autofocuses) and closing it gives focus to nobody, so the global
+    // shortcuts had nothing to bubble up from: after opening a tool bar from
+    // the menu, Alt+X no longer reopened it, and neither did anything else,
+    // until the user clicked into the document.
+    //
+    // Not covered by a test. Under the test binding focus lands in the editor
+    // by itself and the shell's root Focus receives key events even when
+    // nothing below it is focused, so every phrasing tried passed with this
+    // block deleted. Reported from the running app; verify it there.
+    if (ToolBar.ownsFocus(panelId)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _activeEditor?.focusEditor();
+    });
   }
 
   /// Last known "the active editor has a linear selection" value.

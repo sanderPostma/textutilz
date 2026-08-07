@@ -145,20 +145,20 @@ void main() {
   /// The `mimeHasSelection: false` host is used deliberately: the
   /// "⚠️ Transforms the whole document." notice is the longer of the two.
   const heightCeilingsAt800 = <String, double>{
-    'edit.case': 127,
-    'edit.eol': 59,
+    'edit.case': 76,
+    'edit.eol': 49,
     // 8 long labels; this one is still the worst case by a wide margin.
-    'edit.blank': 161,
-    'edit.comment': 127,
-    'mime.base64.encode': 84,
-    'mime.base64.decode': 84,
-    'mime.qp.encode': 84,
-    'mime.qp.decode': 84,
-    'mime.url.encode': 116,
+    'edit.blank': 93,
+    'edit.comment': 76,
+    'mime.base64.encode': 82,
+    'mime.base64.decode': 82,
+    'mime.qp.encode': 81,
+    'mime.qp.decode': 81,
+    'mime.url.encode': 113,
     // Decode hides the RFC1738/Extended/Full selector, so this is shorter
     // than url.encode.
-    'mime.url.decode': 84,
-    'mime.saml.decode': 86,
+    'mime.url.decode': 81,
+    'mime.saml.decode': 84,
     // The tabbed bar: a tab row plus the selected category's option run.
     'mime': 117,
     // Five operation buttons, the scope note, a divider, and the auto-validate
@@ -166,13 +166,18 @@ void main() {
     // also carries the JSON5 dialect switch. These were 86px when the bar held
     // only Pretty-print and Compact.
     //
-    // Every figure here dropped on 2026-08-07, when DockedBar's close button
-    // was trimmed from Material's 40px square to 28px. One-row bars gained the
-    // most (71 to 59px) because the button, not the controls, had been setting
-    // their height; multi-row bars only lost the 2px of padding around it.
+    // These dropped twice on 2026-08-07. First when DockedBar's close button
+    // went from Material's 40px square to 28px, which is what had been setting
+    // every one-row bar's height. Then again, much further, when the edit bars'
+    // ActionChips became the same FilledButton every other bar uses: chips
+    // carry more horizontal padding than they look like they do, so eight of
+    // them needed four wrap runs where eight buttons need two. `edit.blank`
+    // went 161 to 93px on that change alone, and the one-row floor reached
+    // 49px — under the spec's ~52px, which two rounds of chrome-tuning had not
+    // managed.
     'structured.json': 125,
-    'structured.yaml': 113,
-    'structured.xml': 113,
+    'structured.yaml': 109,
+    'structured.xml': 109,
   };
 
   Widget heightHost(String panelId) => MaterialApp(

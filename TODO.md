@@ -63,17 +63,17 @@ overflowed by 97px as soon as text was selected. All three had shipped.
 
 Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
 
-- [ ] **The last 7px of the vertical budget is a design decision, not tuning.**
-      The one-row floor is 59px against a promised ~52px, after `DockedBar`'s
-      close button went from Material's 40px square to 28px. What remains is
-      the title band — and the find bar passes `title: null` and has none, so
-      the spec's 52px was measured on a bar with no title in the first place.
-      Dropping the band is a decision about what a docked bar *is*.
-      Unrelated to the chrome: `edit.blank`'s eight long labels need ~4 wrap
-      runs at 800px and the structured bars need three. All 15 heights are
-      pinned with zero slack in `test/tool_bar_layout_test.dart`; they are
-      upper bounds, since the widget-test font is fixed-width at ~1em/glyph,
-      roughly double a real proportional font.
+- [x] **The vertical budget is met.** The one-row floor is **49px** against a
+      promised ~52px, and `edit.blank` — the worst case, eight long labels —
+      went from 163px to 93px. Two changes did it, and the second was much the
+      larger: `DockedBar`'s close button dropped from Material's 40px square to
+      28px, and then the edit bars' `ActionChip`s became the same `FilledButton`
+      every other bar uses. Chips carry more horizontal padding than they look
+      like they do, so eight of them needed four wrap runs where eight buttons
+      need two. All 15 heights re-measured and pinned with zero slack in
+      `test/tool_bar_layout_test.dart`; they remain upper bounds, since the
+      widget-test font is fixed-width at ~1em/glyph, roughly double a real
+      proportional font.
 
 - [ ] **The ribbon's menu table has no overflow behaviour** — `_buildMenuTable`
       (`lib/menu_ribbon.dart`) is a bare `Row` of five intrinsic-width cards in
@@ -87,6 +87,20 @@ Detail in `docs/superpowers/specs/2026-08-05-docked-tool-bars-design.md`.
       checklist, including confirming the find bar is pixel-identical to its
       pre-`DockedBar` appearance. The find/replace checklist has been completed
       in the running Linux app.
+
+      Four things now rest on that check because no widget test can reach
+      them:
+      - **Focus after opening a tool bar.** `_openToolBar` returns focus to the
+        editor for every bar except the ones `ToolBar.ownsFocus` names (Go to
+        Line, which has a field). Under the test binding focus lands in the
+        editor by itself and the root `Focus` gets key events regardless, so
+        every phrasing tried passed with the production code deleted.
+      - **Window geometry**, including un-maximizing to a sensible size — it
+        needs `window_manager` platform channels.
+      - **Ctrl+Tab's overlay**, which depends on the Ctrl key-up reaching the
+        shell through real GTK key handling.
+      - **The tool-bar button restyle**, which is a judgement about how it
+        looks, not a property a test can assert.
 
 ---
 

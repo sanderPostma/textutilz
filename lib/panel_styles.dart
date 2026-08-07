@@ -22,30 +22,30 @@ class PanelStyles {
   /// Font size shared by every control on a bar.
   static const double fontSize = 13;
 
-  /// An action button on a tool bar: the edit bars' operations.
+  /// **The** action button on a tool bar — every operation on every bar.
   ///
-  /// Tonal rather than outlined, so it reads as a *button* at a glance and
-  /// matches the bar's title band, which uses the same container colour.
-  static ChipThemeData chip(ColorScheme scheme) => ChipThemeData(
+  /// One style and one widget ([FilledButton]) rather than a chip here and a
+  /// filled button there. The bars were built separately and ended up with
+  /// three appearances for the same job: outlined chips on the edit bars,
+  /// lavender filled buttons on the structured bars, another filled button for
+  /// MIME's Apply. Different widgets also mean different shapes and heights,
+  /// so no amount of colour-matching would have made them agree.
+  ///
+  /// Tonal, not primary-filled: a bar carries up to eight of these and they
+  /// are peers. A row of eight primary-coloured buttons is a row with no
+  /// emphasis in it at all, which is the same as having none.
+  static ButtonStyle actionButton(ColorScheme scheme) => FilledButton.styleFrom(
     backgroundColor: scheme.secondaryContainer,
-    disabledColor: scheme.surfaceContainerHigh,
-    labelStyle: TextStyle(
-      fontSize: fontSize,
-      color: scheme.onSecondaryContainer,
-    ),
-    side: BorderSide.none,
+    foregroundColor: scheme.onSecondaryContainer,
+    disabledBackgroundColor: scheme.surfaceContainerHigh,
+    disabledForegroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+    textStyle: const TextStyle(fontSize: fontSize),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    minimumSize: Size.zero,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
   );
-
-  /// The label colour a disabled chip takes.
-  ///
-  /// [ChipThemeData.labelStyle] applies to both states, so the disabled colour
-  /// has to be applied by the caller; a disabled chip that keeps the enabled
-  /// label colour looks enabled, which is the whole point of the state.
-  static Color disabledLabel(ColorScheme scheme) =>
-      scheme.onSurfaceVariant.withValues(alpha: 0.5);
 
   /// A segmented control on a tool bar: Encode/Decode, EOL flavour, URL
   /// variant.
@@ -59,14 +59,16 @@ class PanelStyles {
     side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
   );
 
-  /// The primary action on a tool bar — the one that applies the transform.
-  /// Filled, because there is exactly one of them per bar and it is the thing
-  /// the user came for.
+  /// The one button on a bar that is *not* a peer: MIME's Apply, which runs
+  /// the transform the rest of the bar has been configuring. Primary-filled,
+  /// because here the emphasis means something.
   static ButtonStyle primaryButton(ColorScheme scheme) =>
       FilledButton.styleFrom(
+        textStyle: const TextStyle(fontSize: fontSize),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         minimumSize: Size.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       );
 }

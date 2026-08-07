@@ -229,7 +229,7 @@ class StructuredToolsPanel extends StatelessWidget {
           : null,
       icon: Icon(icon, size: 16),
       label: Text(text),
-      style: PanelStyles.primaryButton(scheme),
+      style: PanelStyles.actionButton(scheme),
     );
     if (active || disabledTooltip == null) return button;
     return Tooltip(message: disabledTooltip, child: button);
