@@ -519,22 +519,26 @@ class _TextEditorState extends State<TextEditor> with WindowListener {
       try {
         final EditSession session;
         if (r.isTransient) {
-          // Rehydrate the scratch file from its persisted content.
-          session = EditSession.createScratch(
-            path: r.path,
-            content: r.scratchContent ?? '',
-          );
+          // Open the scratch file rather than rewriting it. `createScratch`
+          // *writes* its content before opening, which makes that content the
+          // document's baseline — so restoring a scratch buffer this way came
+          // back clean, and the unsaved marker the user saw before quitting
+          // was gone. A scratch buffer is never saved to its own file (Save
+          // prompts Save As and the document stops being transient), so the
+          // file on disk is the baseline and the persisted text is the edit.
+          session = File(r.path).existsSync()
+              ? EditSession.open(path: r.path)
+              : EditSession.createScratch(path: r.path, content: '');
         } else {
           if (!File(r.path).existsSync()) continue; // real file gone — skip
           session = EditSession.open(path: r.path);
-          // Unsaved edits from the last run. Reapplying them over the file's
-          // contents is what makes the tab come back *dirty* — before this,
-          // quitting with a dirty tab reopened the file clean and the work was
-          // gone, with no prompt on the way out or the way back in.
-          final unsaved = r.scratchContent;
-          if (unsaved != null && unsaved != session.contentString()) {
-            session.replaceAll(text: unsaved);
-          }
+        }
+        // Unsaved edits from the last run, for either kind of document.
+        // Reapplying them over the baseline is what makes the tab come back
+        // *dirty*, rather than merely showing the right characters.
+        final unsaved = r.scratchContent;
+        if (unsaved != null && unsaved != session.contentString()) {
+          session.replaceAll(text: unsaved);
         }
         applyUndoSettingToText(session);
         DocumentMeta.reserveId(r.id);

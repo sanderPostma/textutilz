@@ -41,6 +41,13 @@ the list of what shipped but the handful of things that cost time to learn.
    rewritten on every structural change, so the content is written far more
    often than it is read; above it the app asks before quitting rather than
    losing the work quietly.
+   The scratch-buffer half needed its own fix: `EditSession::create_scratch`
+   *writes* its content to the file before opening it, so restoring a scratch
+   document that way makes the unsaved text its baseline and the tab comes back
+   clean. Restore opens the existing scratch file instead — a scratch buffer is
+   never saved to its own file, since Save prompts Save As and the document
+   stops being transient, so the file on disk is the baseline and the persisted
+   text is the edit on top of it.
 5. **Syntax hues are deliberately not derived from the theme.** The scheme
    supplies a tint and the neutral roles; the hues stay canonical, because
    green-means-comment is a convention shared with every other editor and a

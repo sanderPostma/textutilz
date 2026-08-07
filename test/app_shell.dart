@@ -52,10 +52,13 @@ class AppShellHarness {
   /// [unsavedContent] is name → text the store carries as *unsaved* edits, the
   /// way it would after quitting with a dirty tab. Both together are how a
   /// restart with unsaved work is reproduced.
+  /// [transient] names the documents restored as scratch buffers rather than
+  /// real files; their on-disk file is the baseline they are dirty against.
   static Future<AppShellHarness> pump(
     WidgetTester tester, {
     required Map<String, String> documents,
     Map<String, String> unsavedContent = const {},
+    Set<String> transient = const {},
     String viewMode = ViewMode.edit,
   }) async {
     final id = _counter++;
@@ -81,7 +84,7 @@ class AppShellHarness {
           id: 'shell-$id-$order',
           displayName: entry.key,
           path: path,
-          isTransient: false,
+          isTransient: transient.contains(entry.key),
           contentType: 'Plain Text',
           extension_: entry.key.split('.').last,
           autoDelete: 'off',

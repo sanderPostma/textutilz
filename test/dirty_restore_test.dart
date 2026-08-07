@@ -78,6 +78,45 @@ void main() {
     expect(harness.storePath, isNotEmpty);
   });
 
+  testWidgets('a scratch buffer comes back dirty too', (tester) async {
+    // The report that reopened this: the tab was a scratch document ("new 14"),
+    // not a real file. `createScratch` *writes* its content before opening, so
+    // restoring one that way made the unsaved text the baseline and the tab
+    // came back clean. Scratch buffers are the case most likely to hold
+    // unsaved work, since they have nowhere else to live.
+    await AppShellHarness.pump(
+      tester,
+      documents: {'new 14': ''},
+      unsavedContent: {'new 14': 'typed but never saved'},
+      transient: {'new 14'},
+    );
+    await tester.pumpAndSettle();
+
+    final session = editorOf(tester).widget.session;
+    expect(session.contentString(), 'typed but never saved');
+    expect(
+      session.isDirty(),
+      isTrue,
+      reason: 'the blue unsaved marker must survive the restart',
+    );
+  });
+
+  testWidgets('an untouched scratch buffer does not come back dirty', (
+    tester,
+  ) async {
+    // The guard: a scratch document created and never typed into is not
+    // unsaved work, and must not prompt on close.
+    await AppShellHarness.pump(
+      tester,
+      documents: {'new 15': ''},
+      unsavedContent: {'new 15': ''},
+      transient: {'new 15'},
+    );
+    await tester.pumpAndSettle();
+
+    expect(editorOf(tester).widget.session.isDirty(), isFalse);
+  });
+
   testWidgets('a clean restore leaves the document undirtied', (tester) async {
     // The guard on the reapply: rewriting content identical to the file would
     // mark a clean tab dirty and prompt on close for nothing.
